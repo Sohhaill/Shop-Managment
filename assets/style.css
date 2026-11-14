@@ -48,7 +48,7 @@ body {
 .brand { font-size: 20px; font-weight: 600; }
 
 .admin-btn {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
   color: var(--text);
