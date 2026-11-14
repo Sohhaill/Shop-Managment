@@ -55,6 +55,7 @@ body {
   text-decoration: none;
   padding: 8px 14px;
   border: 1px solid var(--border);
+  background: transparent;
   border-radius: 8px;
   font-size: 14px;
   transition: border-color .2s, color .2s;
