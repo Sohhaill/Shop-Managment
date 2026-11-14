@@ -868,3 +868,8 @@ textarea:focus {
   .shop-banner-logo { width: 52px; height: 52px; }
   .shop-banner-text h2 { font-size: 17px; }
 }
+
+/* ===== Khata: WhatsApp reminder button ===== */
+.act-btn.wa { border-color: #25d366; color: #25d366; }
+.act-btn.wa:hover:not(:disabled) { background: #25d366; color: #fff; }
+.act-btn.wa:disabled { opacity: 0.45; cursor: not-allowed; }

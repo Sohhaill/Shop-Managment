@@ -726,6 +726,40 @@ async function loadKhata() {
   renderKhata();
 }
 
+// ---- WhatsApp reminder (free "click to chat" link, no API needed) ----
+// Turns a number typed like 0300-1234567 / +92 300 1234567 / 0092300... into 923001234567.
+function whatsappNumber(raw) {
+  if (!raw) return "";
+  const text = String(raw).trim();
+  let d = text.replace(/\D/g, "");
+  if (!d) return "";
+  if (text.startsWith("+")) { /* already has a country code */ }
+  else if (d.startsWith("00")) d = d.slice(2);
+  else if (d.startsWith("0")) d = "92" + d.slice(1);       // local Pakistan number
+  else if (d.length === 10 && d.startsWith("3")) d = "92" + d; // 3001234567
+  return d.length >= 10 && d.length <= 15 ? d : "";
+}
+
+function khataReminderText(p) {
+  const si = shopInfo || {};
+  const owner = (si.owner_name || "").trim();
+  const shop = (si.shop_name || "").trim();
+  const sender = owner && shop ? owner + " (" + shop + ")" : owner || shop || "dukaan";
+  const amount = CURRENCY + " " + Number(p.total).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return (
+    "Assalam o Alaikum " + p.name + ",\n" +
+    sender + " ki taraf se yaad dehani: aap ke khata mein " + amount +
+    " baqaya hain. Meherbani farma kar jald ada kar dein. Shukriya."
+  );
+}
+
+function sendKhataReminder(p) {
+  const num = whatsappNumber(p.phone);
+  if (!num) return toast("Add a valid phone number for " + p.name, "error");
+  const url = "https://wa.me/" + num + "?text=" + encodeURIComponent(khataReminderText(p));
+  window.open(url, "_blank", "noopener");
+}
+
 function renderKhata() {
   const q = $("kSearch").value.trim().toLowerCase();
   const list = khataPeople.filter((p) => p.name.toLowerCase().includes(q));
@@ -745,14 +779,25 @@ function renderKhata() {
     tr.appendChild(el("td", "", p.last_entry ? fmtDateTime(p.last_entry) : "-"));
 
     const act = el("td", "actions");
-    [
+    const buttons = [
       ["History", "", () => showHistory(p)],
       ["Edit entry", "", () => startEditEntry(p)],
       ["Delete", "danger", () => deletePerson(p)],
-    ].forEach(([label, cls, fn]) => {
+    ];
+    // WhatsApp reminder: only for people who still owe money (total > 0)
+    if (Number(p.total) > 0) {
+      const hasNumber = !!whatsappNumber(p.phone);
+      buttons.unshift(["WhatsApp", "wa", () => sendKhataReminder(p), !hasNumber]);
+    }
+    buttons.forEach(([label, cls, fn, disabled]) => {
       const b = el("button", "act-btn " + cls, label);
       b.type = "button";
-      b.addEventListener("click", fn);
+      if (disabled) {
+        b.disabled = true;
+        b.title = "Add this person's phone number to send a WhatsApp reminder";
+      } else {
+        b.addEventListener("click", fn);
+      }
       act.appendChild(b);
     });
     tr.appendChild(act);
