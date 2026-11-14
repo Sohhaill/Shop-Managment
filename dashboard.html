@@ -41,6 +41,7 @@
       <button type="button" class="nav-item" data-view="sales">Sales Management</button>
       <button type="button" class="nav-item" data-view="khata">Khata</button>
       <button type="button" class="nav-item" data-view="balance">Balance</button>
+      <button type="button" class="nav-item" data-view="shopinfo">Shop Info</button>
       <button type="button" class="nav-item" data-view="pin">PIN &amp; Password</button>
     </nav>
 
@@ -48,6 +49,17 @@
 
       <!-- ===== HOME ===== -->
       <section id="view-home" class="view">
+
+        <!-- Shop banner: shop logo + name + details (set in the Shop Info tab) -->
+        <div class="shop-banner" id="shopBanner">
+          <div class="shop-banner-logo" id="shopBannerLogo"></div>
+          <div class="shop-banner-text">
+            <h2 id="shopBannerName"></h2>
+            <p class="muted small" id="shopBannerLine1"></p>
+            <p class="muted small" id="shopBannerLine2"></p>
+          </div>
+          <button type="button" id="shopBannerEdit" class="act-btn">Edit</button>
+        </div>
 
         <!-- Top bar: every balance with its title and total (click one to send / receive) -->
         <div class="balance-bar" id="balanceBar">
@@ -273,6 +285,51 @@
       </section>
 
       <!-- ===== PIN & PASSWORD ===== -->
+      <!-- ===== SHOP INFO ===== -->
+      <section id="view-shopinfo" class="view hidden">
+        <div class="view-head"><h2>Shop Info</h2></div>
+
+        <form id="shopForm" class="card-form shop-form" novalidate>
+          <div class="shop-logo-row">
+            <div id="shopLogoPreview" class="shop-logo-preview"></div>
+            <div class="shop-logo-side">
+              <label for="shopLogoFile">Shop logo</label>
+              <input type="file" id="shopLogoFile" accept="image/*" />
+              <button type="button" id="shopLogoRemove" class="act-btn hidden">Remove logo</button>
+              <p class="muted small">PNG or JPG, a square picture looks best. It is shown on Home and on the PDF bill.</p>
+            </div>
+          </div>
+
+          <h3>Shop details</h3>
+          <div class="form-row">
+            <div><label for="siName">Shop name *</label><input type="text" id="siName" maxlength="80" placeholder="e.g. Ali General Store" /></div>
+            <div><label for="siOwner">Owner name *</label><input type="text" id="siOwner" maxlength="60" placeholder="Owner's full name" /></div>
+            <div><label for="siPhone">Shop number *</label><input type="tel" id="siPhone" maxlength="30" placeholder="03xx..." /></div>
+            <div><label for="siPhone2">Second number / WhatsApp</label><input type="tel" id="siPhone2" maxlength="30" placeholder="Optional" /></div>
+            <div><label for="siEmail">Email</label><input type="email" id="siEmail" maxlength="80" placeholder="Optional" /></div>
+            <div><label for="siTax">NTN / Registration no.</label><input type="text" id="siTax" maxlength="40" placeholder="Optional" /></div>
+          </div>
+
+          <h3>Location</h3>
+          <div class="form-row">
+            <div class="span-2"><label for="siAddress">Shop address *</label><input type="text" id="siAddress" maxlength="150" placeholder="Shop no., street, area" /></div>
+            <div><label for="siCity">City</label><input type="text" id="siCity" maxlength="50" placeholder="e.g. Mandi Bahauddin" /></div>
+            <div><label for="siMap">Google Maps link</label><input type="url" id="siMap" maxlength="300" placeholder="https://maps.google.com/..." /></div>
+          </div>
+
+          <h3>Other</h3>
+          <div class="form-row">
+            <div><label for="siHours">Opening hours</label><input type="text" id="siHours" maxlength="80" placeholder="e.g. 9 AM - 10 PM" /></div>
+            <div><label for="siFooter">Bill footer note</label><input type="text" id="siFooter" maxlength="100" placeholder="Thank you for your purchase!" /></div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="siSave" style="width: fit-content;">Save shop info</button>
+            <div id="siMsg" class="message" role="alert"></div>
+          </div>
+        </form>
+      </section>
+
       <section id="view-pin" class="view hidden">
         <div class="view-head"><h2>PIN &amp; Password</h2></div>
         <div class="settings-grid">

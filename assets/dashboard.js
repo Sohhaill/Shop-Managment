@@ -105,6 +105,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "balance") loadBalances();
     if (btn.dataset.view === "lowstock") loadProducts(); // fresh numbers every time the tab opens
     if (btn.dataset.view === "pin") loadPinStatus();
+    if (btn.dataset.view === "shopinfo") fillShopForm();
   });
 });
 
@@ -542,6 +543,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   currentUser = user;
   $("userName").textContent = profile.full_name || user.email;
 
+  loadShopInfo(); // shop logo / name for Home and the PDF bill (doesn't block the rest)
   await supabaseClient.rpc("cleanup_old_sales"); // delete sales older than 30 days
   setupSalesDate();
   await loadProducts();
@@ -1434,26 +1436,54 @@ function buildBillPdf(bill) {
     maximumFractionDigits: 2,
   });
 
-  // Header: shop name on the left, BILL on the right
+  // Header: shop logo + name + details on the left, BILL on the right
+  const si = shopInfo || {};
+  let textX = M;
+  if (shopLogoData) {
+    const box = 22; // logo is fitted inside a 22 x 22 mm box
+    const r = Math.min(box / shopLogoData.w, box / shopLogoData.h);
+    const lw = shopLogoData.w * r;
+    const lh = shopLogoData.h * r;
+    try {
+      doc.addImage(shopLogoData.dataUrl, shopLogoData.format, M, 10 + (box - lh) / 2, lw, lh);
+      textX = M + box + 5;
+    } catch (e) { /* if the logo can't be drawn, print the bill without it */ }
+  }
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...ink);
-  doc.text(SHOP_NAME, M, 20);
+  const shopLines = doc.splitTextToSize(si.shop_name || SHOP_NAME, W - M - 38 - textX);
+  doc.text(shopLines, textX, 20);
 
   doc.setFontSize(24);
   doc.setTextColor(...green);
   doc.text("BILL", W - M, 20, { align: "right" });
 
-  let y = 26;
+  let y = 20 + (shopLines.length - 1) * 8 + 6;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(...gray);
-  [SHOP_ADDRESS, SHOP_PHONE ? "Phone: " + SHOP_PHONE : ""].filter(Boolean).forEach((line) => {
-    doc.text(line, M, y);
-    y += 5;
+  const addrLine = [si.address || SHOP_ADDRESS, si.city].filter(Boolean).join(", ");
+  const phoneLine = [si.phone || SHOP_PHONE, si.phone2].filter(Boolean).join(" / ");
+  [
+    addrLine,
+    phoneLine ? "Phone: " + phoneLine : "",
+    si.email ? "Email: " + si.email : "",
+    si.tax_no ? "NTN / Reg: " + si.tax_no : "",
+    si.opening_hours ? "Hours: " + si.opening_hours : "",
+  ].filter(Boolean).forEach((line) => {
+    doc.text(doc.splitTextToSize(line, W - M - textX), textX, y);
+    y += 4.8;
   });
+  if (si.map_link) {
+    doc.setTextColor(...green);
+    doc.textWithLink("Location: View on Google Maps", textX, y, { url: si.map_link });
+    doc.setTextColor(...gray);
+    y += 4.8;
+  }
 
-  y = Math.max(y, 28) + 2;
+  y = Math.max(y, shopLogoData ? 34 : 28) + 2;
   doc.setDrawColor(...green);
   doc.setLineWidth(0.8);
   doc.line(M, y, W - M, y);
@@ -1546,7 +1576,7 @@ function buildBillPdf(bill) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(...gray);
-    if (i === pages) doc.text("Thank you for your purchase!", W / 2, H - 14, { align: "center" });
+    if (i === pages) doc.text(si.bill_footer || "Thank you for your purchase!", W / 2, H - 14, { align: "center" });
     if (pages > 1) doc.text("Page " + i + " of " + pages, W / 2, H - 8, { align: "center" });
   }
   return doc;
@@ -1667,4 +1697,239 @@ $("stockForm").addEventListener("submit", async (e) => {
 // ====== HOME: Generate Bill shortcut ======
 $("homeBillBtn").addEventListener("click", () => {
   document.querySelector('.nav-item[data-view="bill"]').click();
+});
+
+// ====== SHOP INFO ======
+// One shared row (id = 1) in the shop_info table. The logo lives in the same storage bucket
+// as the product pictures. Shown on Home (banner) and printed at the top of the PDF bill.
+let shopInfo = null;          // saved shop details (null until the first save)
+let shopLogoData = null;      // logo prepared for the PDF: { dataUrl, w, h, format }
+let pendingLogoFile = null;   // new logo chosen but not saved yet
+let removeLogoFlag = false;   // "Remove logo" clicked but not saved yet
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("Could not read the logo"));
+    r.readAsDataURL(blob);
+  });
+}
+
+function imageSize(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => reject(new Error("Invalid logo"));
+    img.src = dataUrl;
+  });
+}
+
+// Download the saved logo once, so the PDF (which is built instantly) can use it
+async function prepareLogoForPdf() {
+  shopLogoData = null;
+  if (!shopInfo || !shopInfo.logo_path) return;
+  try {
+    const { data: blob, error } = await supabaseClient.storage.from(IMAGE_BUCKET).download(shopInfo.logo_path);
+    if (error || !blob) return;
+    const dataUrl = await blobToDataUrl(blob);
+    const { w, h } = await imageSize(dataUrl);
+    shopLogoData = { dataUrl, w, h, format: blob.type === "image/png" ? "PNG" : "JPEG" };
+  } catch (e) {
+    shopLogoData = null; // bill will simply print without a logo
+  }
+}
+
+function logoNode(cls) {
+  if (shopInfo && shopInfo.logo_path) {
+    const img = el("img", cls);
+    img.alt = (shopInfo.shop_name || "Shop") + " logo";
+    img.src = imageUrl(shopInfo.logo_path);
+    return img;
+  }
+  return el("div", cls + " ph", ((shopInfo && shopInfo.shop_name) || "S").charAt(0).toUpperCase());
+}
+
+function renderShopBanner() {
+  const holder = $("shopBannerLogo");
+  holder.innerHTML = "";
+  holder.appendChild(logoNode("shop-logo-img"));
+
+  if (!shopInfo) {
+    $("shopBannerName").textContent = "Set up your shop";
+    $("shopBannerLine1").textContent = "Add your shop name, logo, address and phone number.";
+    $("shopBannerLine2").textContent = "";
+    $("shopBannerEdit").textContent = "Add shop info";
+    return;
+  }
+  $("shopBannerEdit").textContent = "Edit";
+  $("shopBannerName").textContent = shopInfo.shop_name || SHOP_NAME;
+  $("shopBannerLine1").textContent = [shopInfo.address, shopInfo.city].filter(Boolean).join(", ");
+  $("shopBannerLine2").textContent = [
+    shopInfo.owner_name ? "Owner: " + shopInfo.owner_name : "",
+    shopInfo.phone ? "Phone: " + shopInfo.phone : "",
+  ].filter(Boolean).join("  ·  ");
+}
+
+async function loadShopInfo() {
+  const { data, error } = await supabaseClient.from("shop_info").select("*").eq("id", 1).maybeSingle();
+  if (error) console.error("Shop info could not be loaded:", error.message);
+  shopInfo = error ? null : data;
+  renderShopBanner();
+  fillShopForm();
+  await prepareLogoForPdf();
+}
+
+function showLogoPreview(src) {
+  const box = $("shopLogoPreview");
+  box.innerHTML = "";
+  if (src) {
+    const img = el("img", "shop-logo-img");
+    img.alt = "Logo preview";
+    img.src = src;
+    box.appendChild(img);
+    $("shopLogoRemove").classList.remove("hidden");
+  } else {
+    box.appendChild(el("div", "shop-logo-img ph", "Logo"));
+    $("shopLogoRemove").classList.add("hidden");
+  }
+}
+
+function fillShopForm() {
+  const s = shopInfo || {};
+  $("siName").value = s.shop_name || "";
+  $("siOwner").value = s.owner_name || "";
+  $("siPhone").value = s.phone || "";
+  $("siPhone2").value = s.phone2 || "";
+  $("siEmail").value = s.email || "";
+  $("siTax").value = s.tax_no || "";
+  $("siAddress").value = s.address || "";
+  $("siCity").value = s.city || "";
+  $("siMap").value = s.map_link || "";
+  $("siHours").value = s.opening_hours || "";
+  $("siFooter").value = s.bill_footer || "";
+  $("shopLogoFile").value = "";
+  pendingLogoFile = null;
+  removeLogoFlag = false;
+  showLogoPreview(s.logo_path ? imageUrl(s.logo_path) : null);
+  formMsg("siMsg", "");
+}
+
+$("shopLogoFile").addEventListener("change", () => {
+  const f = $("shopLogoFile").files[0];
+  if (!f) return;
+  if (!f.type.startsWith("image/")) {
+    $("shopLogoFile").value = "";
+    return formMsg("siMsg", "Please choose an image file.");
+  }
+  formMsg("siMsg", "");
+  pendingLogoFile = f;
+  removeLogoFlag = false;
+  showLogoPreview(URL.createObjectURL(f));
+});
+
+$("shopLogoRemove").addEventListener("click", () => {
+  pendingLogoFile = null;
+  removeLogoFlag = true;
+  $("shopLogoFile").value = "";
+  showLogoPreview(null);
+});
+
+// Logo is shrunk to 400px but kept as PNG so a transparent background stays transparent
+function compressLogo(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, 400 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process the logo"))), "image/png");
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Invalid image file"));
+    };
+    img.src = url;
+  });
+}
+
+$("shopForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("siMsg", "");
+
+  const v = (id) => $(id).value.trim();
+  const name = v("siName");
+  const owner = v("siOwner");
+  const phone = v("siPhone");
+  const address = v("siAddress");
+  const map = v("siMap");
+
+  if (!name) return formMsg("siMsg", "Shop name is required.");
+  if (!owner) return formMsg("siMsg", "Owner name is required.");
+  if (!phone) return formMsg("siMsg", "Shop number is required.");
+  if (!address) return formMsg("siMsg", "Shop address is required.");
+  if (map && !/^https?:\/\//i.test(map)) return formMsg("siMsg", "The map link must start with http:// or https://");
+
+  const btn = $("siSave");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+
+  const oldPath = shopInfo ? shopInfo.logo_path : null;
+  let logoPath = removeLogoFlag ? null : oldPath;
+  let uploadedPath = null;
+
+  try {
+    if (pendingLogoFile) {
+      const blob = await compressLogo(pendingLogoFile);
+      uploadedPath = currentUser.id + "/shop-logo-" + Date.now() + ".png";
+      const { error: upErr } = await supabaseClient.storage
+        .from(IMAGE_BUCKET)
+        .upload(uploadedPath, blob, { contentType: "image/png" });
+      if (upErr) throw upErr;
+      logoPath = uploadedPath;
+    }
+
+    const payload = {
+      id: 1,
+      shop_name: name,
+      owner_name: owner,
+      phone,
+      phone2: v("siPhone2") || null,
+      email: v("siEmail") || null,
+      tax_no: v("siTax") || null,
+      address,
+      city: v("siCity") || null,
+      map_link: map || null,
+      opening_hours: v("siHours") || null,
+      bill_footer: v("siFooter") || null,
+      logo_path: logoPath,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabaseClient.from("shop_info").upsert(payload);
+    if (error) {
+      if (uploadedPath) await supabaseClient.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
+      throw error;
+    }
+
+    // remove the replaced / removed logo from storage (best effort)
+    if (oldPath && oldPath !== logoPath) {
+      await supabaseClient.storage.from(IMAGE_BUCKET).remove([oldPath]);
+    }
+
+    await loadShopInfo();
+    toast("Shop info saved");
+  } catch (err) {
+    formMsg("siMsg", err.message || "Something went wrong.");
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Save shop info";
+});
+
+$("shopBannerEdit").addEventListener("click", () => {
+  document.querySelector('.nav-item[data-view="shopinfo"]').click();
 });
