@@ -35,7 +35,9 @@
     <!-- LEFT SIDEBAR TABS -->
     <nav class="sidebar">
       <button type="button" class="nav-item active" data-view="home">Home</button>
+      <button type="button" class="nav-item" data-view="bill">Generate Bill</button>
       <button type="button" class="nav-item" data-view="products">Manage Products</button>
+      <button type="button" class="nav-item" data-view="lowstock">Low Stock <span class="nav-badge hidden" id="lowStockBadge">0</span></button>
       <button type="button" class="nav-item" data-view="sales">Sales Management</button>
       <button type="button" class="nav-item" data-view="khata">Khata</button>
       <button type="button" class="nav-item" data-view="balance">Balance</button>
@@ -51,6 +53,7 @@
         <div class="balance-bar" id="balanceBar">
           <span class="bb-label">Balance</span>
           <div class="bb-list" id="balanceBarList"></div>
+          <button type="button" id="homeBillBtn" class="primary-btn bb-bill-btn">Generate Bill</button>
         </div>
 
         <div class="home-grid">
@@ -108,6 +111,48 @@
         </div>
       </section>
 
+      <!-- ===== GENERATE BILL ===== -->
+      <section id="view-bill" class="view hidden">
+        <div class="home-grid">
+
+          <!-- Left: this customer's order -->
+          <aside class="panel sale-panel">
+            <div class="panel-head">
+              <h2>Customer bill</h2>
+              <span id="billDateLabel" class="muted small"></span>
+            </div>
+            <div class="bill-customer">
+              <input type="text" id="billCustomer" placeholder="Customer name (optional)" maxlength="60" autocomplete="off" />
+            </div>
+            <ul id="billList" class="sale-list"></ul>
+            <p id="billEmpty" class="empty">No items yet. Pick products on the right.</p>
+            <div class="sale-total">
+              <div><span class="muted small">Items</span><strong id="billCount">0</strong></div>
+              <div><span class="muted small">Total</span><strong id="billTotal">0</strong></div>
+            </div>
+            <div class="bill-actions">
+              <label for="billReceived">Received payment</label>
+              <input type="number" id="billReceived" min="0" step="0.01" placeholder="0.00" />
+              <div class="bill-buttons">
+                <button type="button" id="billCalcBtn" class="primary-btn">Calculate</button>
+                <button type="button" id="billNewBtn" class="act-btn">New bill</button>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Right: products -->
+          <section class="panel products-panel">
+            <div class="panel-head">
+              <h2>Products</h2>
+              <input type="search" id="billSearch" placeholder="Search product..." autocomplete="off" />
+            </div>
+            <div id="billGrid" class="product-grid"></div>
+            <p id="billGridEmpty" class="empty hidden">No products found.</p>
+          </section>
+
+        </div>
+      </section>
+
       <!-- ===== MANAGE PRODUCTS ===== -->
       <section id="view-products" class="view hidden">
         <div class="view-head">
@@ -122,6 +167,23 @@
             <tbody id="productsBody"></tbody>
           </table>
           <p id="productsEmpty" class="empty hidden">No products yet. Click "Add new product".</p>
+        </div>
+      </section>
+
+      <!-- ===== LOW STOCK ===== -->
+      <section id="view-lowstock" class="view hidden">
+        <div class="view-head">
+          <h2>Low stock</h2>
+          <span class="muted small" id="lowStockNote"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>Image</th><th>Name</th><th>Price</th><th>Quantity</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="lowBody"></tbody>
+          </table>
+          <p id="lowEmpty" class="empty hidden">All products are well stocked.</p>
         </div>
       </section>
 
@@ -352,6 +414,80 @@
     </div>
   </div>
 
+  <!-- ===== LOW STOCK: ADD STOCK POPUP ===== -->
+  <div class="modal hidden" id="stockModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <div class="sale-modal-top">
+        <div id="stImg"></div>
+        <div>
+          <h3 id="stName"></h3>
+          <p class="muted small">Current quantity: <strong id="stCurrent"></strong></p>
+        </div>
+      </div>
+      <form id="stockForm" novalidate>
+        <label for="stAdd">Quantity to add</label>
+        <input type="number" id="stAdd" min="1" step="1" placeholder="e.g. 20" required />
+
+        <div class="line-total">New quantity: <strong id="stNew"></strong></div>
+        <div id="stockMsg" class="message" role="alert"></div>
+        <button type="submit" id="stSubmit">Add stock</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== BILL: ADD PRODUCT TO THE BILL POPUP ===== -->
+  <div class="modal hidden" id="billItemModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <div class="sale-modal-top">
+        <div id="biImg"></div>
+        <div>
+          <h3 id="biName"></h3>
+          <p id="biDesc" class="muted small"></p>
+          <p class="muted small">In stock: <strong id="biStock"></strong></p>
+        </div>
+      </div>
+      <form id="billItemForm" novalidate>
+        <label for="biPrice">Price (you can edit)</label>
+        <input type="number" id="biPrice" min="0" step="0.01" required />
+
+        <label for="biQty">Quantity</label>
+        <input type="number" id="biQty" min="1" step="1" value="1" required />
+
+        <div class="line-total">Total: <strong id="biTotal"></strong></div>
+        <p class="muted small">This item is also added to today's sale.</p>
+        <div id="billItemMsg" class="message" role="alert"></div>
+        <button type="submit" id="biSubmit">Add to bill</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== BILL: SUMMARY POPUP (opens from Calculate) ===== -->
+  <div class="modal hidden" id="billModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3>Bill summary</h3>
+      <div class="bill-meta">
+        <div><span class="muted small">Customer</span><strong id="bvCustomer"></strong></div>
+        <div><span class="muted small">Date</span><strong id="bvDate"></strong></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead>
+          <tbody id="bvBody"></tbody>
+        </table>
+      </div>
+      <div class="bill-sum">
+        <div><span>Total payment</span><strong id="bvTotal"></strong></div>
+        <div><span>Received payment</span><strong id="bvReceived"></strong></div>
+        <div class="bill-sum-diff" id="bvDiffRow"><span id="bvDiffLabel"></span><strong id="bvDiff"></strong></div>
+      </div>
+      <div id="bvMsg" class="message" role="alert"></div>
+      <button type="button" id="bvGenerate" class="primary-btn bill-generate">Generate bill (PDF)</button>
+    </div>
+  </div>
+
   <!-- ===== BALANCE: ADD / EDIT ENTRY POPUP ===== -->
   <div class="modal hidden" id="balanceModal">
     <div class="modal-box">
@@ -420,6 +556,9 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- PDF bill: jsPDF + its table plugin (load jsPDF first) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.9/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="./assets/dashboard.js"></script>
 </body>
 </html>

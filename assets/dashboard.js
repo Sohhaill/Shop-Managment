@@ -10,6 +10,9 @@ const LOW_STOCK = 5;              // quantity at or below this shows a low-stock
 const KEEP_DAYS = 30;             // how far back the date picker goes (SQL cleanup also uses 30)
 const IMAGE_BUCKET = "product-images";
 const MAX_IMAGE_SIDE = 700;       // product images are shrunk to this size before upload
+const SHOP_NAME = "Shop Portal";   // printed at the top of the PDF bill
+const SHOP_ADDRESS = "";          // optional line under the shop name on the bill
+const SHOP_PHONE = "";            // optional phone number on the bill
 
 // ====== STATE ======
 let currentUser = null;
@@ -100,6 +103,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "sales") loadSalesForDate();
     if (btn.dataset.view === "khata") loadKhata();
     if (btn.dataset.view === "balance") loadBalances();
+    if (btn.dataset.view === "lowstock") loadProducts(); // fresh numbers every time the tab opens
     if (btn.dataset.view === "pin") loadPinStatus();
   });
 });
@@ -110,7 +114,9 @@ async function loadProducts() {
   if (error) return toast(error.message, "error");
   products = data;
   renderGrid();
+  renderBillGrid();
   renderProductsTable();
+  renderLowStock();
 }
 
 // Home: product cards with search
@@ -124,25 +130,27 @@ function renderGrid() {
   empty.classList.toggle("hidden", list.length > 0);
   empty.textContent = products.length ? "No products found." : "No products yet. Add some in Manage Products.";
 
-  list.forEach((p) => {
-    const card = el("div", "product-card");
-    card.appendChild(makeThumb(p));
-    card.appendChild(el("div", "p-name", p.name));
-    card.appendChild(el("div", "p-price", money(p.price)));
+  list.forEach((p) => grid.appendChild(productCard(p, () => openSaleModal(p))));
+}
 
-    const stock = el("div", "p-stock", p.quantity > 0 ? "In stock: " + p.quantity : "Out of stock");
-    if (p.quantity <= 0) stock.classList.add("out");
-    else if (p.quantity <= LOW_STOCK) stock.classList.add("low");
-    card.appendChild(stock);
+// One product card (used on Home and in Generate Bill)
+function productCard(p, onAdd, label = "Add") {
+  const card = el("div", "product-card");
+  card.appendChild(makeThumb(p));
+  card.appendChild(el("div", "p-name", p.name));
+  card.appendChild(el("div", "p-price", money(p.price)));
 
-    const btn = el("button", "add-btn", p.quantity > 0 ? "Add" : "Out of stock");
-    btn.type = "button";
-    btn.disabled = p.quantity <= 0;
-    btn.addEventListener("click", () => openSaleModal(p));
-    card.appendChild(btn);
+  const stock = el("div", "p-stock", p.quantity > 0 ? "In stock: " + p.quantity : "Out of stock");
+  if (p.quantity <= 0) stock.classList.add("out");
+  else if (p.quantity <= LOW_STOCK) stock.classList.add("low");
+  card.appendChild(stock);
 
-    grid.appendChild(card);
-  });
+  const btn = el("button", "add-btn", p.quantity > 0 ? label : "Out of stock");
+  btn.type = "button";
+  btn.disabled = p.quantity <= 0;
+  btn.addEventListener("click", onAdd);
+  card.appendChild(btn);
+  return card;
 }
 $("searchBox").addEventListener("input", renderGrid);
 
@@ -295,6 +303,7 @@ function renderTodaySales() {
 
   $("todayCount").textContent = count;
   $("todayTotal").textContent = money(total);
+  renderBill();
 }
 
 async function removeSale(sale, btn) {
@@ -1120,3 +1129,542 @@ async function submitTx(type) {
 $("txSend").addEventListener("click", () => submitTx("send"));
 $("txReceive").addEventListener("click", () => submitTx("receive"));
 $("txForm").addEventListener("submit", (e) => e.preventDefault());
+
+// ====== GENERATE BILL ======
+// Left: this customer's order. Right: products.
+// Every item added here is also a normal sale (add_sale), so it shows in Today's sale
+// and the stock goes down. Removing it from the bill removes that sale and puts the
+// stock back. The bill only remembers the ids of its sales rows, so the data always
+// matches Today's sale.
+const BILL_DRAFT_KEY = "billDraft";
+let billItems = [];          // ids of the sales rows that belong to the bill being made
+let activeBillProduct = null; // product shown in the "add to bill" popup
+let lastBill = null;         // snapshot shown in the summary popup (this is what the PDF uses)
+
+const round2 = (n) => Math.round(Number(n) * 100) / 100;
+
+function billNumber(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return "B" + String(d.getFullYear()).slice(2) + p(d.getMonth() + 1) + p(d.getDate()) +
+    "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+// Keep the unfinished bill if the page is refreshed (same day only)
+function saveBillDraft() {
+  try {
+    localStorage.setItem(BILL_DRAFT_KEY, JSON.stringify({
+      date: localDate(),
+      ids: billItems,
+      customer: $("billCustomer").value,
+      received: $("billReceived").value,
+    }));
+  } catch (e) {}
+}
+function restoreBillDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(BILL_DRAFT_KEY) || "null");
+    if (!d || d.date !== localDate()) return;
+    billItems = Array.isArray(d.ids) ? d.ids : [];
+    $("billCustomer").value = d.customer || "";
+    $("billReceived").value = d.received || "";
+  } catch (e) {}
+}
+restoreBillDraft();
+$("billCustomer").addEventListener("input", saveBillDraft);
+$("billReceived").addEventListener("input", saveBillDraft);
+
+// The sales rows that belong to this bill (looked up in today's sales)
+function billSales() {
+  const byId = new Map(todaySales.map((s) => [String(s.id), s]));
+  return billItems.map((id) => byId.get(String(id))).filter(Boolean);
+}
+
+// Left side: the customer's items and the running total
+function renderBill() {
+  // forget items whose sale was removed meanwhile (for example from Home)
+  const ids = new Set(todaySales.map((s) => String(s.id)));
+  billItems = billItems.filter((id) => ids.has(String(id)));
+
+  $("billDateLabel").textContent = new Date().toLocaleDateString(undefined, {
+    weekday: "short", day: "numeric", month: "short",
+  });
+
+  const items = billSales();
+  const list = $("billList");
+  list.innerHTML = "";
+  $("billEmpty").classList.toggle("hidden", items.length > 0);
+
+  let total = 0;
+  let count = 0;
+  items.forEach((s) => {
+    total += Number(s.total);
+    count += s.quantity;
+
+    const li = el("li", "sale-item");
+    const info = el("div", "sale-info");
+    info.appendChild(el("div", "sale-name", s.product_name));
+    info.appendChild(el("div", "muted small", s.quantity + " × " + money(s.unit_price)));
+
+    const right = el("div", "sale-right");
+    right.appendChild(el("strong", "", money(s.total)));
+    const del = el("button", "icon-btn", "✕");
+    del.type = "button";
+    del.title = "Remove from bill (stock will be restored)";
+    del.addEventListener("click", () => removeBillItem(s, del));
+    right.appendChild(del);
+
+    li.appendChild(info);
+    li.appendChild(right);
+    list.appendChild(li);
+  });
+
+  $("billCount").textContent = count;
+  $("billTotal").textContent = money(total);
+  saveBillDraft();
+}
+
+// Right side: products
+function renderBillGrid() {
+  const q = $("billSearch").value.trim().toLowerCase();
+  const list = products.filter((p) => p.name.toLowerCase().includes(q));
+  const grid = $("billGrid");
+  grid.innerHTML = "";
+
+  const empty = $("billGridEmpty");
+  empty.classList.toggle("hidden", list.length > 0);
+  empty.textContent = products.length ? "No products found." : "No products yet. Add some in Manage Products.";
+
+  list.forEach((p) => grid.appendChild(productCard(p, () => openBillItemModal(p), "Add to bill")));
+}
+$("billSearch").addEventListener("input", renderBillGrid);
+
+// Add-to-bill popup
+function openBillItemModal(p) {
+  activeBillProduct = p;
+  const wrap = $("biImg");
+  wrap.innerHTML = "";
+  wrap.appendChild(makeThumb(p, "big"));
+
+  $("biName").textContent = p.name;
+  $("biDesc").textContent = p.description || "No description";
+  $("biStock").textContent = p.quantity;
+  $("biPrice").value = p.price;
+  $("biQty").value = 1;
+  $("biQty").max = p.quantity;
+  formMsg("billItemMsg", "");
+  updateBillItemTotal();
+  openModal("billItemModal");
+  $("biQty").focus();
+  $("biQty").select();
+}
+
+function updateBillItemTotal() {
+  const price = parseFloat($("biPrice").value) || 0;
+  const qty = parseInt($("biQty").value, 10) || 0;
+  $("biTotal").textContent = money(price * qty);
+}
+$("biPrice").addEventListener("input", updateBillItemTotal);
+$("biQty").addEventListener("input", updateBillItemTotal);
+
+// add_sale may return an id, a row or just a status; take the id if there is one
+function saleIdFrom(data) {
+  if (Array.isArray(data)) return data[0] && data[0].id != null ? data[0].id : null;
+  if (data && typeof data === "object") return data.id != null ? data.id : null;
+  if (typeof data === "string" || typeof data === "number") return data;
+  return null;
+}
+
+$("billItemForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("billItemMsg", "");
+
+  const p = activeBillProduct;
+  const price = parseFloat($("biPrice").value);
+  const qty = parseInt($("biQty").value, 10);
+
+  if (isNaN(price) || price < 0) return formMsg("billItemMsg", "Enter a valid price.");
+  if (!qty || qty < 1) return formMsg("billItemMsg", "Enter a valid quantity.");
+  if (qty > p.quantity) return formMsg("billItemMsg", "Only " + p.quantity + " in stock.");
+
+  const btn = $("biSubmit");
+  btn.disabled = true;
+  btn.textContent = "Adding...";
+
+  const before = new Set(todaySales.map((s) => String(s.id)));
+  const { data, error } = await supabaseClient.rpc("add_sale", {
+    p_product_id: p.id,
+    p_quantity: qty,
+    p_price: price,
+    p_date: localDate(),
+  });
+
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = "Add to bill";
+    return formMsg("billItemMsg", error.message);
+  }
+
+  await Promise.all([loadProducts(), loadTodaySales()]);
+  btn.disabled = false;
+  btn.textContent = "Add to bill";
+  closeModal("billItemModal");
+
+  // find the sales row that was just created
+  let newId = saleIdFrom(data);
+  if (newId == null || !todaySales.some((s) => String(s.id) === String(newId))) {
+    const fresh = todaySales.find((s) => !before.has(String(s.id)) && String(s.product_id) === String(p.id));
+    newId = fresh ? fresh.id : null;
+  }
+  if (newId == null) {
+    return toast("Added to today's sale, but not to the bill. Please refresh the page.", "error");
+  }
+
+  billItems.push(newId);
+  renderBill();
+  toast("Added to bill");
+});
+
+async function removeBillItem(sale, btn) {
+  const msg = 'Remove "' + sale.product_name + '" from this bill? It is also removed from today\'s sale and the quantity goes back to stock.';
+  if (!confirm(msg)) return;
+
+  btn.disabled = true;
+  const { error } = await supabaseClient.rpc("delete_sale", { p_sale_id: sale.id });
+  if (error) {
+    btn.disabled = false;
+    return toast(error.message, "error");
+  }
+
+  billItems = billItems.filter((id) => String(id) !== String(sale.id));
+  await Promise.all([loadProducts(), loadTodaySales()]);
+  toast("Removed, stock restored");
+}
+
+// New bill: clears only this list. The items stay in today's sale.
+$("billNewBtn").addEventListener("click", () => {
+  if (billSales().length &&
+      !confirm("Start a new bill? The items stay in today's sale, only this list is cleared.")) return;
+  billItems = [];
+  $("billCustomer").value = "";
+  $("billReceived").value = "";
+  renderBill();
+});
+
+// What the customer gets back / still owes
+function billDiffInfo(b) {
+  const diff = round2(b.received - b.total);
+  if (diff > 0) return { label: "Remaining to give back", value: money(diff), kind: "give" };
+  if (diff < 0) return { label: "Remaining to pay", value: money(-diff), kind: "owe" };
+  return { label: "Balance", value: "Paid in full", kind: "even" };
+}
+
+// Calculate: freeze the order into a summary popup
+$("billCalcBtn").addEventListener("click", () => {
+  const items = billSales();
+  if (!items.length) return toast("Add at least one item first.", "error");
+
+  const raw = $("billReceived").value.trim();
+  const received = raw === "" ? 0 : parseFloat(raw);
+  if (isNaN(received) || received < 0) return toast("Enter a valid received payment.", "error");
+
+  const now = new Date();
+  lastBill = {
+    number: billNumber(now),
+    customer: $("billCustomer").value.trim(),
+    dateTime: now.toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+    items: items.map((s) => ({
+      name: s.product_name,
+      qty: s.quantity,
+      price: Number(s.unit_price),
+      total: Number(s.total),
+    })),
+    total: round2(items.reduce((sum, s) => sum + Number(s.total), 0)),
+    received: round2(received),
+  };
+  showBillSummary(lastBill);
+});
+
+function showBillSummary(b) {
+  $("bvCustomer").textContent = b.customer || "Walk-in customer";
+  $("bvDate").textContent = b.dateTime;
+
+  const body = $("bvBody");
+  body.innerHTML = "";
+  b.items.forEach((it) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "", it.name));
+    tr.appendChild(el("td", "num", String(it.qty)));
+    tr.appendChild(el("td", "num", money(it.price)));
+    tr.appendChild(el("td", "num", money(it.total)));
+    body.appendChild(tr);
+  });
+
+  const diff = billDiffInfo(b);
+  $("bvTotal").textContent = money(b.total);
+  $("bvReceived").textContent = money(b.received);
+  $("bvDiffRow").className = "bill-sum-diff " + diff.kind;
+  $("bvDiffLabel").textContent = diff.label;
+  $("bvDiff").textContent = diff.value;
+
+  // The PDF uses a basic font: it cannot draw Urdu or other non-English letters
+  const text = b.customer + b.items.map((i) => i.name).join("");
+  if (/[^\u0000-ÿ]/.test(text)) {
+    formMsg("bvMsg", "Note: letters outside English (like Urdu script) will not show correctly in the PDF.");
+  } else {
+    formMsg("bvMsg", "");
+  }
+  openModal("billModal");
+}
+
+// ---- PDF ----
+// Builds the PDF with jsPDF + autoTable and returns the document.
+function buildBillPdf(bill) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 16; // page margin
+  const green = [31, 169, 113];
+  const ink = [30, 30, 30];
+  const gray = [110, 110, 110];
+  const red = [217, 54, 54];
+  // fixed English format so the digits always print correctly (2 decimals only when needed)
+  const pm = (n) => CURRENCY + " " + Number(n).toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+
+  // Header: shop name on the left, BILL on the right
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...ink);
+  doc.text(SHOP_NAME, M, 20);
+
+  doc.setFontSize(24);
+  doc.setTextColor(...green);
+  doc.text("BILL", W - M, 20, { align: "right" });
+
+  let y = 26;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...gray);
+  [SHOP_ADDRESS, SHOP_PHONE ? "Phone: " + SHOP_PHONE : ""].filter(Boolean).forEach((line) => {
+    doc.text(line, M, y);
+    y += 5;
+  });
+
+  y = Math.max(y, 28) + 2;
+  doc.setDrawColor(...green);
+  doc.setLineWidth(0.8);
+  doc.line(M, y, W - M, y);
+  y += 9;
+
+  // Billed to (left) and bill number / date (right)
+  doc.setFontSize(8.5);
+  doc.setTextColor(...gray);
+  doc.text("BILLED TO", M, y);
+  doc.text("BILL NO", W - M, y, { align: "right" });
+  y += 5.5;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...ink);
+  const nameLines = doc.splitTextToSize(bill.customer || "Walk-in customer", 110);
+  doc.text(nameLines, M, y);
+  doc.text(bill.number, W - M, y, { align: "right" });
+
+  const rightY = y + 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...gray);
+  doc.text("DATE", W - M, rightY, { align: "right" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...ink);
+  doc.text(bill.dateTime, W - M, rightY + 5.5, { align: "right" });
+
+  y = Math.max(y + nameLines.length * 5.5, rightY + 6) + 8;
+
+  // Items table
+  doc.autoTable({
+    startY: y,
+    margin: { left: M, right: M, bottom: 24 },
+    head: [["#", "Item", "Qty", "Price", "Total"]],
+    body: bill.items.map((it, i) => [i + 1, it.name, it.qty, pm(it.price), pm(it.total)]),
+    theme: "striped",
+    styles: { font: "helvetica", fontSize: 10, cellPadding: 3, textColor: ink },
+    headStyles: { fillColor: green, textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 247, 246] },
+    columnStyles: {
+      0: { cellWidth: 12, halign: "center" },
+      2: { cellWidth: 20, halign: "center" },
+      3: { cellWidth: 36, halign: "right" },
+      4: { cellWidth: 36, halign: "right" },
+    },
+    // heading labels line up with the numbers under them
+    didParseCell: (d) => {
+      if (d.section === "head") d.cell.styles.halign = ["center", "left", "center", "right", "right"][d.column.index];
+    },
+  });
+
+  // Totals, right-aligned under the table
+  let sy = doc.lastAutoTable.finalY + 10;
+  if (sy + 42 > H - 20) {
+    doc.addPage();
+    sy = 24;
+  }
+  const labelX = W - M - 78;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(labelX, sy - 5, W - M, sy - 5);
+
+  const row = (label, value, opts = {}) => {
+    doc.setFont("helvetica", opts.bold ? "bold" : "normal");
+    doc.setFontSize(opts.size || 11);
+    doc.setTextColor(...(opts.color || ink));
+    doc.text(label, labelX, sy);
+    doc.text(value, W - M, sy, { align: "right" });
+    sy += opts.gap || 7;
+  };
+  row("Total payment", pm(bill.total), { bold: true, size: 13, gap: 8 });
+  row("Received payment", pm(bill.received), { gap: 9 });
+
+  const diff = billDiffInfo(bill);
+  const diffValue = diff.kind === "give" ? pm(round2(bill.received - bill.total))
+    : diff.kind === "owe" ? pm(round2(bill.total - bill.received))
+    : "Paid in full";
+  row(diff.label, diffValue, {
+    bold: true,
+    size: 12,
+    color: diff.kind === "owe" ? red : green,
+  });
+
+  // Footer on every page; thank-you note on the last one
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...gray);
+    if (i === pages) doc.text("Thank you for your purchase!", W / 2, H - 14, { align: "center" });
+    if (pages > 1) doc.text("Page " + i + " of " + pages, W / 2, H - 8, { align: "center" });
+  }
+  return doc;
+}
+
+$("bvGenerate").addEventListener("click", () => {
+  if (!lastBill) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    return formMsg("bvMsg", "The PDF library could not load. Check the internet and refresh the page.");
+  }
+  try {
+    buildBillPdf(lastBill).save("Bill-" + lastBill.number + ".pdf");
+    formMsg("bvMsg", "Bill downloaded. Click New bill when you are done with this customer.", "success");
+  } catch (err) {
+    formMsg("bvMsg", "Could not create the PDF: " + (err.message || err));
+  }
+});
+
+// ====== LOW STOCK ======
+// Every product with LOW_STOCK or fewer left (including 0). Stock can be increased here.
+let stockProduct = null; // product shown in the Add stock popup
+
+function renderLowStock() {
+  const low = products
+    .filter((p) => p.quantity <= LOW_STOCK)
+    .sort((a, b) => a.quantity - b.quantity || a.name.localeCompare(b.name));
+
+  $("lowStockBadge").textContent = low.length;
+  $("lowStockBadge").classList.toggle("hidden", low.length === 0);
+  $("lowStockNote").textContent = "Products with " + LOW_STOCK + " or less left";
+
+  const body = $("lowBody");
+  body.innerHTML = "";
+  $("lowEmpty").classList.toggle("hidden", low.length > 0);
+
+  low.forEach((p) => {
+    const tr = document.createElement("tr");
+
+    const tdImg = document.createElement("td");
+    tdImg.appendChild(makeThumb(p, "small"));
+    tr.appendChild(tdImg);
+
+    tr.appendChild(el("td", "", p.name));
+    tr.appendChild(el("td", "", money(p.price)));
+    tr.appendChild(el("td", p.quantity <= 0 ? "out" : "low", p.quantity <= 0 ? "Out of stock" : String(p.quantity)));
+
+    const act = el("td", "actions");
+    const add = el("button", "act-btn", "Add stock");
+    add.type = "button";
+    add.addEventListener("click", () => openStockModal(p));
+    act.appendChild(add);
+    tr.appendChild(act);
+
+    body.appendChild(tr);
+  });
+}
+
+function openStockModal(p) {
+  stockProduct = p;
+  const wrap = $("stImg");
+  wrap.innerHTML = "";
+  wrap.appendChild(makeThumb(p, "big"));
+  $("stName").textContent = p.name;
+  $("stCurrent").textContent = p.quantity;
+  $("stAdd").value = "";
+  formMsg("stockMsg", "");
+  updateStockNew();
+  openModal("stockModal");
+  $("stAdd").focus();
+}
+
+function updateStockNew() {
+  if (!stockProduct) return;
+  const add = parseInt($("stAdd").value, 10) || 0;
+  $("stNew").textContent = stockProduct.quantity + add;
+}
+$("stAdd").addEventListener("input", updateStockNew);
+
+$("stockForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("stockMsg", "");
+
+  const p = stockProduct;
+  const add = parseInt($("stAdd").value, 10);
+  if (!add || add < 1) return formMsg("stockMsg", "Enter how many to add (1 or more).");
+
+  const btn = $("stSubmit");
+  btn.disabled = true;
+
+  // Read the latest quantity first, so a sale made a moment ago is not overwritten
+  const { data: cur, error: readErr } = await supabaseClient
+    .from("products").select("quantity").eq("id", p.id).single();
+  if (readErr) {
+    btn.disabled = false;
+    return formMsg("stockMsg", readErr.message);
+  }
+
+  const newQty = Number(cur.quantity) + add;
+  const { data: updated, error } = await supabaseClient
+    .from("products")
+    .update({ quantity: newQty })
+    .eq("id", p.id)
+    .eq("quantity", cur.quantity) // only if nobody changed it in between
+    .select("id");
+  btn.disabled = false;
+
+  if (error) return formMsg("stockMsg", error.message);
+  if (!updated || !updated.length) {
+    await loadProducts();
+    return formMsg("stockMsg", "The stock changed just now. Please check the number and try again.");
+  }
+
+  closeModal("stockModal");
+  await loadProducts();
+  toast(p.name + ": stock is now " + newQty);
+});
+
+// ====== HOME: Generate Bill shortcut ======
+$("homeBillBtn").addEventListener("click", () => {
+  document.querySelector('.nav-item[data-view="bill"]').click();
+});
