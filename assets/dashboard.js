@@ -74,15 +74,19 @@ function goLogin() {
 
 // ====== MODALS ======
 function openModal(id) { $(id).classList.remove("hidden"); }
-function closeModal(id) { $(id).classList.add("hidden"); }
+function closeModal(id) {
+  $(id).classList.add("hidden");
+  if (id === "pinModal") cancelPin();      // a closed PIN popup counts as "cancelled"
+  if (id === "entryModal") entryPin = null; // forget the PIN when the entry popup closes
+}
 
 document.querySelectorAll(".modal").forEach((m) => {
   m.addEventListener("click", (e) => {
-    if (e.target === m || e.target.hasAttribute("data-close")) m.classList.add("hidden");
+    if (e.target === m || e.target.hasAttribute("data-close")) closeModal(m.id);
   });
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") document.querySelectorAll(".modal").forEach((m) => m.classList.add("hidden"));
+  if (e.key === "Escape") document.querySelectorAll(".modal").forEach((m) => closeModal(m.id));
 });
 
 // ====== TABS ======
@@ -93,6 +97,8 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
     $("view-" + btn.dataset.view).classList.remove("hidden");
     if (btn.dataset.view === "sales") loadSalesForDate();
+    if (btn.dataset.view === "khata") loadKhata();
+    if (btn.dataset.view === "pin") loadPinStatus();
   });
 });
 
@@ -270,6 +276,7 @@ function renderTodaySales() {
     info.appendChild(el("div", "sale-name", s.product_name));
     const time = new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     info.appendChild(el("div", "muted small", s.quantity + " × " + money(s.unit_price) + "  ·  " + time));
+    if (s.description) info.appendChild(el("div", "muted small", s.description));
 
     const right = el("div", "sale-right");
     right.appendChild(el("strong", "", money(s.total)));
@@ -289,7 +296,10 @@ function renderTodaySales() {
 }
 
 async function removeSale(sale, btn) {
-  if (!confirm('Remove "' + sale.product_name + '" from today\'s sale? The quantity goes back to stock.')) return;
+  const msg = sale.product_id
+    ? 'Remove "' + sale.product_name + '" from today\'s sale? The quantity goes back to stock.'
+    : 'Remove "' + sale.product_name + '" from today\'s sale?';
+  if (!confirm(msg)) return;
 
   btn.disabled = true;
   const { error } = await supabaseClient.rpc("delete_sale", { p_sale_id: sale.id });
@@ -474,7 +484,7 @@ async function loadSalesForDate() {
 
     const tr = document.createElement("tr");
     const time = new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    [time, s.product_name, String(s.quantity), money(s.unit_price), money(s.total)].forEach((t) =>
+    [time, s.product_name + (s.description ? " — " + s.description : ""), String(s.quantity), money(s.unit_price), money(s.total)].forEach((t) =>
       tr.appendChild(el("td", "", t))
     );
     body.appendChild(tr);
@@ -526,3 +536,378 @@ supabaseClient.auth.onAuthStateChange((event) => {
   await loadProducts();
   await loadTodaySales();
 })();
+// ====== MESSAGES FOR PIN / KHATA DATABASE ANSWERS ======
+function statusMessage(status) {
+  switch (status) {
+    case "ok": return null;
+    case "wrong": return "Wrong PIN.";
+    case "locked": return "Too many wrong tries. Try again in 5 minutes.";
+    case "nopin": return "No PIN set yet. Create one in the PIN & Password tab.";
+    case "exists": return "This name is already in your Khata. Use Edit entry on that person.";
+    case "invalid": return "Please check the details and try again.";
+    default: return "Not allowed.";
+  }
+}
+
+function fmtDate(d) {
+  return new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+function fmtDateTime(iso) {
+  return new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// ====== UNIVERSAL PIN POPUP ======
+// Use anywhere:
+//   const pin = await requirePin("Enter PIN to continue", checkPin);
+//   if (!pin) return;            // cancelled
+// The 2nd argument runs with the typed PIN and returns an error text (popup stays open)
+// or null (popup closes). Use checkPin to only verify, or your own function to verify + do the job.
+let pinPending = null;
+
+function requirePin(title, action) {
+  return new Promise((resolve) => {
+    if (pinPending) pinPending.resolve(null);
+    pinPending = { action, resolve };
+    $("pinPromptTitle").textContent = title;
+    $("pinPromptInput").value = "";
+    formMsg("pinPromptMsg", "");
+    openModal("pinModal");
+    $("pinPromptInput").focus();
+  });
+}
+
+function cancelPin() {
+  if (pinPending) {
+    const p = pinPending;
+    pinPending = null;
+    p.resolve(null);
+  }
+}
+
+async function checkPin(pin) {
+  const { data, error } = await supabaseClient.rpc("verify_pin", { p_pin: pin });
+  return error ? error.message : statusMessage(data);
+}
+
+$("pinPromptForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const current = pinPending;
+  if (!current) return;
+
+  const pin = $("pinPromptInput").value.trim();
+  if (!/^\d{4,6}$/.test(pin)) return formMsg("pinPromptMsg", "Enter your 4 to 6 digit PIN.");
+
+  const btn = $("pinPromptBtn");
+  btn.disabled = true;
+  const err = await current.action(pin);
+  btn.disabled = false;
+
+  if (pinPending !== current) return; // cancelled meanwhile
+  if (err) {
+    $("pinPromptInput").value = "";
+    $("pinPromptInput").focus();
+    return formMsg("pinPromptMsg", err);
+  }
+
+  pinPending = null;
+  $("pinModal").classList.add("hidden");
+  current.resolve(pin);
+});
+
+// PIN boxes accept digits only
+document.querySelectorAll(".pin-input").forEach((inp) => {
+  inp.addEventListener("input", () => { inp.value = inp.value.replace(/\D/g, ""); });
+});
+
+// ====== PIN & PASSWORD TAB ======
+let hasPin = false;
+
+async function loadPinStatus() {
+  const { data, error } = await supabaseClient.rpc("has_pin");
+  if (error) return toast(error.message, "error");
+  hasPin = !!data;
+  $("pinStatus").textContent = hasPin
+    ? "A PIN is set. Enter your current PIN to change it."
+    : "No PIN set yet. Create one to protect Khata edits and deletes.";
+  $("oldPinWrap").classList.toggle("hidden", !hasPin);
+  $("pinSave").textContent = hasPin ? "Update PIN" : "Set PIN";
+}
+
+$("pinForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("pinFormMsg", "");
+
+  const oldPin = $("pinOld").value.trim();
+  const newPin = $("pinNew").value.trim();
+  const confirmPin = $("pinConfirm").value.trim();
+
+  if (hasPin && !/^\d{4,6}$/.test(oldPin)) return formMsg("pinFormMsg", "Enter your current PIN.");
+  if (!/^\d{4,6}$/.test(newPin)) return formMsg("pinFormMsg", "PIN must be 4 to 6 digits.");
+  if (newPin !== confirmPin) return formMsg("pinFormMsg", "PINs do not match.");
+
+  const btn = $("pinSave");
+  btn.disabled = true;
+  const { data, error } = await supabaseClient.rpc("set_pin", { p_new: newPin, p_old: hasPin ? oldPin : null });
+  btn.disabled = false;
+
+  const msg = error ? error.message : statusMessage(data);
+  if (msg) return formMsg("pinFormMsg", msg);
+
+  $("pinForm").reset();
+  toast("PIN saved");
+  loadPinStatus();
+});
+
+$("passForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("passFormMsg", "");
+
+  const oldPass = $("passOld").value;
+  const newPass = $("passNew").value;
+  const confirmPass = $("passConfirm").value;
+
+  if (!oldPass) return formMsg("passFormMsg", "Enter your current password.");
+  if (newPass.length < 6) return formMsg("passFormMsg", "New password must be at least 6 characters.");
+  if (newPass !== confirmPass) return formMsg("passFormMsg", "New passwords do not match.");
+  if (newPass === oldPass) return formMsg("passFormMsg", "New password must be different.");
+
+  const btn = $("passSave");
+  btn.disabled = true;
+
+  // 1. check the old password is correct
+  const { error: signErr } = await supabaseClient.auth.signInWithPassword({
+    email: currentUser.email,
+    password: oldPass,
+  });
+  if (signErr) {
+    btn.disabled = false;
+    return formMsg("passFormMsg", "Current password is incorrect.");
+  }
+
+  // 2. set the new one
+  const { error } = await supabaseClient.auth.updateUser({ password: newPass });
+  btn.disabled = false;
+  if (error) return formMsg("passFormMsg", error.message);
+
+  $("passForm").reset();
+  toast("Password updated");
+});
+
+// ====== KHATA ======
+let khataPeople = [];
+let entryPerson = null;
+let entrySign = 1;     // 1 = plus, -1 = minus
+let entryPin = null;   // PIN typed for the open Edit entry popup
+
+async function loadKhata() {
+  if (!$("kDate").value) {
+    $("kDate").value = localDate();
+    $("kDate").max = localDate();
+  }
+  const { data, error } = await supabaseClient.from("khata_people").select("*").order("name");
+  if (error) return toast(error.message, "error");
+  khataPeople = data;
+  renderKhata();
+}
+
+function renderKhata() {
+  const q = $("kSearch").value.trim().toLowerCase();
+  const list = khataPeople.filter((p) => p.name.toLowerCase().includes(q));
+  const body = $("khataBody");
+  body.innerHTML = "";
+
+  $("khataEmpty").classList.toggle("hidden", list.length > 0);
+  $("khataEmpty").textContent = khataPeople.length ? "No one found." : "No one in Khata yet. Add a person above.";
+  $("kTotal").textContent = money(khataPeople.reduce((s, p) => s + Number(p.total), 0));
+  $("kPeople").textContent = khataPeople.length;
+
+  list.forEach((p) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "", p.name));
+    tr.appendChild(el("td", "", p.phone || "-"));
+    tr.appendChild(el("td", "person-total", money(p.total)));
+    tr.appendChild(el("td", "", p.last_entry ? fmtDateTime(p.last_entry) : "-"));
+
+    const act = el("td", "actions");
+    [
+      ["History", "", () => showHistory(p)],
+      ["Edit entry", "", () => startEditEntry(p)],
+      ["Delete", "danger", () => deletePerson(p)],
+    ].forEach(([label, cls, fn]) => {
+      const b = el("button", "act-btn " + cls, label);
+      b.type = "button";
+      b.addEventListener("click", fn);
+      act.appendChild(b);
+    });
+    tr.appendChild(act);
+    body.appendChild(tr);
+  });
+}
+$("kSearch").addEventListener("input", renderKhata);
+
+// Add person (name + date + amount)
+$("khataForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("khataFormMsg", "");
+
+  const name = $("kName").value.trim();
+  const phone = $("kPhone").value.trim();
+  const note = $("kNote").value.trim();
+  const date = $("kDate").value;
+  const amount = parseFloat($("kAmount").value);
+
+  if (!name) return formMsg("khataFormMsg", "Enter the person's name.");
+  if (!date) return formMsg("khataFormMsg", "Select a date.");
+  if (isNaN(amount) || amount <= 0) return formMsg("khataFormMsg", "Enter a valid amount.");
+
+  const btn = $("kSubmit");
+  btn.disabled = true;
+  const { data, error } = await supabaseClient.rpc("khata_add_person", {
+    p_name: name, p_phone: phone || null, p_amount: amount, p_date: date, p_note: note || null,
+  });
+  btn.disabled = false;
+
+  const msg = error ? error.message : statusMessage(data);
+  if (msg) return formMsg("khataFormMsg", msg);
+
+  $("khataForm").reset();
+  $("kDate").value = localDate();
+  await loadKhata();
+  toast("Added to Khata");
+});
+
+// History popup
+async function showHistory(p) {
+  $("hsName").textContent = p.name;
+  $("hsTotal").textContent = money(p.total);
+  $("hsBody").innerHTML = "";
+  $("hsEmpty").classList.add("hidden");
+  openModal("historyModal");
+
+  const { data, error } = await supabaseClient
+    .from("khata_entries")
+    .select("*")
+    .eq("person_id", p.id)
+    .order("created_at", { ascending: false });
+  if (error) return toast(error.message, "error");
+
+  $("hsEmpty").classList.toggle("hidden", data.length > 0);
+  data.forEach((en) => {
+    const a = Number(en.amount);
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "", fmtDate(en.entry_date)));
+    tr.appendChild(el("td", "", new Date(en.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+    tr.appendChild(el("td", a > 0 ? "amt-plus" : "amt-minus", (a > 0 ? "+ " : "- ") + money(Math.abs(a))));
+    tr.appendChild(el("td", "", en.description || "-"));
+    $("hsBody").appendChild(tr);
+  });
+}
+
+// Edit entry: PIN first, then the plus/minus popup
+async function startEditEntry(p) {
+  const pin = await requirePin("Enter PIN to edit entry", checkPin);
+  if (!pin) return;
+
+  entryPerson = p;
+  entryPin = pin;
+  $("enName").textContent = p.name;
+  $("enCurrent").textContent = money(p.total);
+  $("enAmount").value = "";
+  $("enDesc").value = "";
+  formMsg("entryMsg", "");
+  setSign(1);
+  openModal("entryModal");
+  $("enAmount").focus();
+}
+
+function setSign(n) {
+  entrySign = n;
+  $("signPlus").classList.toggle("active", n === 1);
+  $("signMinus").classList.toggle("active", n === -1);
+  updateNewTotal();
+}
+function updateNewTotal() {
+  if (!entryPerson) return;
+  const amt = parseFloat($("enAmount").value) || 0;
+  $("enNewTotal").textContent = money(Number(entryPerson.total) + entrySign * amt);
+}
+$("signPlus").addEventListener("click", () => setSign(1));
+$("signMinus").addEventListener("click", () => setSign(-1));
+$("enAmount").addEventListener("input", updateNewTotal);
+
+$("entryForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("entryMsg", "");
+
+  const amount = parseFloat($("enAmount").value);
+  if (isNaN(amount) || amount <= 0) return formMsg("entryMsg", "Enter a valid amount.");
+
+  const btn = $("enSubmit");
+  btn.disabled = true;
+  const { data, error } = await supabaseClient.rpc("khata_add_entry", {
+    p_person_id: entryPerson.id,
+    p_amount: entrySign * amount,
+    p_description: $("enDesc").value.trim() || null,
+    p_date: localDate(),
+    p_pin: entryPin,
+  });
+  btn.disabled = false;
+
+  const msg = error ? error.message : statusMessage(data);
+  if (msg) return formMsg("entryMsg", msg);
+
+  closeModal("entryModal");
+  await loadKhata();
+  toast("Entry saved");
+});
+
+// Delete person: confirm, then PIN, then delete
+async function deletePerson(p) {
+  if (!confirm('Delete "' + p.name + '" and ALL their entries? This cannot be undone.')) return;
+
+  const pin = await requirePin("Enter PIN to delete", async (pin) => {
+    const { data, error } = await supabaseClient.rpc("khata_delete_person", { p_person_id: p.id, p_pin: pin });
+    return error ? error.message : statusMessage(data);
+  });
+  if (!pin) return;
+
+  await loadKhata();
+  toast("Deleted");
+}
+// ====== CUSTOM ENTRY (an item that is not in the products) ======
+$("customEntryBtn").addEventListener("click", () => {
+  $("customForm").reset();
+  formMsg("customMsg", "");
+  openModal("customModal");
+  $("ceName").focus();
+});
+
+$("customForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("customMsg", "");
+
+  const name = $("ceName").value.trim();
+  const price = parseFloat($("cePrice").value);
+  const desc = $("ceDesc").value.trim();
+
+  if (!name) return formMsg("customMsg", "Enter a name.");
+  if (isNaN(price) || price <= 0) return formMsg("customMsg", "Enter a valid price.");
+
+  const btn = $("ceSubmit");
+  btn.disabled = true;
+  const { error } = await supabaseClient.from("sales").insert({
+    product_id: null,
+    product_name: name,
+    unit_price: price,
+    quantity: 1,
+    sale_date: localDate(),
+    description: desc || null,
+  });
+  btn.disabled = false;
+
+  if (error) return formMsg("customMsg", error.message);
+
+  closeModal("customModal");
+  await loadTodaySales();
+  toast("Custom entry added");
+});

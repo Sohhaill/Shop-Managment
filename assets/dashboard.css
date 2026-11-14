@@ -300,6 +300,7 @@ button.admin-btn {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
+  margin-top: 12px;
   overflow-x: auto;
 }
 .data-table {
@@ -562,3 +563,7 @@ textarea:focus {
     grid-template-columns: 1fr 1fr;
   }
 }
+/* Custom entry button above the total */
+.custom-entry-bar { padding: 10px 16px; border-top: 1px solid var(--border); }
+.custom-entry-bar .act-btn { width: 100%; padding: 9px; border-color: var(--accent); color: var(--accent); }
+.custom-entry-bar .act-btn:hover { background: var(--accent); color: var(--on-accent); }

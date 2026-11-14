@@ -38,6 +38,7 @@
       <button type="button" class="nav-item" data-view="products">Manage Products</button>
       <button type="button" class="nav-item" data-view="sales">Sales Management</button>
       <button type="button" class="nav-item" data-view="khata">Khata</button>
+      <button type="button" class="nav-item" data-view="pin">PIN &amp; Password</button>
     </nav>
 
     <main class="content">
@@ -54,6 +55,32 @@
             </div>
             <ul id="saleList" class="sale-list"></ul>
             <p id="saleEmpty" class="empty">No items sold yet today.</p>
+            <div class="custom-entry-bar">
+              <button type="button" id="customEntryBtn" class="act-btn">+ Custom entry</button>
+            </div>
+  <!-- ===== CUSTOM ENTRY POPUP ===== -->
+  <div class="modal hidden" id="customModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3>Custom entry</h3>
+      <p class="muted small">Add something that is not in your products to today's sale.</p>
+      <form id="customForm" novalidate>
+        <label for="ceName">Name</label>
+        <input type="text" id="ceName" placeholder="e.g. Delivery charges" required />
+
+        <label for="cePrice">Price</label>
+        <input type="number" id="cePrice" min="0.01" step="0.01" placeholder="0.00" required />
+
+        <label for="ceDesc">Description (optional)</label>
+        <textarea id="ceDesc" rows="2" placeholder="Details"></textarea>
+
+        <p class="muted small">Date and time are saved automatically.</p>
+        <div id="customMsg" class="message" role="alert"></div>
+        <button type="submit" id="ceSubmit">Confirm</button>
+      </form>
+    </div>
+  </div>
+
             <div class="sale-total">
               <div><span class="muted small">Items sold</span><strong id="todayCount">0</strong></div>
               <div><span class="muted small">Total sale</span><strong id="todayTotal">0</strong></div>
@@ -117,8 +144,82 @@
 
       <!-- ===== KHATA (coming later) ===== -->
       <section id="view-khata" class="view hidden">
-        <div class="view-head"><h2>Khata</h2></div>
-        <div class="empty-card">Khata section coming soon.</div>
+        <div class="view-head">
+          <h2>Khata</h2>
+          <div class="khata-summary">Total <strong id="kTotal">0</strong>· <span id="kPeople">0</span> people</div>
+        </div>
+
+        <form id="khataForm" class="card-form" novalidate>
+          <h3>Add person</h3>
+          <div class="form-row">
+            <div><label for="kName">Name</label><input type="text" id="kName" placeholder="Person name" required /></div>
+            <div><label for="kPhone">Phone (optional)</label><input type="tel" id="kPhone" placeholder="03xx..." /></div>
+            <div><label for="kDate">Date</label><input type="date" id="kDate" required /></div>
+            <div><label for="kAmount">Amount</label><input type="number" id="kAmount" min="0.01" step="0.01" placeholder="0.00" required /></div>
+            <div><label for="kNote">Note (optional)</label><input type="text" id="kNote" placeholder="e.g. groceries" /></div>
+          </div>
+          <div class="form-actions">
+            <button style="
+   
+    width: fit-content;
+"type="submit" id="kSubmit">Confirm &amp; add</button>
+            <div id="khataFormMsg" class="message" role="alert"></div>
+          </div>
+        </form>
+
+        <div class="list-head">
+          <h3>People</h3>
+          <input type="search" id="kSearch" placeholder="Search name..." autocomplete="off" />
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>Name</th><th>Phone</th><th>Total</th><th>Last entry</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="khataBody"></tbody>
+          </table>
+          <p id="khataEmpty" class="empty hidden">No one in Khata yet.</p>
+        </div>
+      </section>
+
+      <!-- ===== PIN & PASSWORD ===== -->
+      <section id="view-pin" class="view hidden">
+        <div class="view-head"><h2>PIN &amp; Password</h2></div>
+        <div class="settings-grid">
+
+          <form id="pinForm" class="card-form" novalidate>
+            <h3>Your PIN</h3>
+            <p id="pinStatus" class="muted small"></p>
+            <div id="oldPinWrap">
+              <label for="pinOld">Current PIN</label>
+              <input type="password" id="pinOld" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" />
+            </div>
+            <label for="pinNew">New PIN (4 to 6 digits)</label>
+            <input type="password" id="pinNew" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" />
+            <label for="pinConfirm">Confirm new PIN</label>
+            <input type="password" id="pinConfirm" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" />
+            <div id="pinFormMsg" class="message" role="alert"></div>
+            <button style="
+    margin-top: unset;
+    margin-bottom: 30px;
+    width: fit-content;"type="submit" id="pinSave">Set PIN</button>
+          </form>
+
+          <form id="passForm" class="card-form" novalidate>
+            <h3>Change password</h3>
+            <label for="passOld">Current password</label>
+            <input type="password" id="passOld" autocomplete="current-password" />
+            <label for="passNew">New password (min 6 characters)</label>
+            <input type="password" id="passNew" autocomplete="new-password" />
+            <label for="passConfirm">Confirm new password</label>
+            <input type="password" id="passConfirm" autocomplete="new-password" />
+            <div id="passFormMsg" class="message" role="alert"></div>
+            <button style="
+    margin-top: unset;
+    margin-bottom: 30px; width: fit-content;" type="submit" id="passSave">Update password</button>
+          </form>
+
+        </div>
       </section>
 
     </main>
@@ -176,6 +277,63 @@
 
         <div id="productFormMsg" class="message" role="alert"></div>
         <button type="submit" id="pmSubmit">Save product</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== KHATA: EDIT ENTRY POPUP ===== -->
+  <div class="modal hidden" id="entryModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3>Edit entry</h3>
+      <p class="muted small"><strong id="enName"></strong> · Current total: <strong id="enCurrent"></strong></p>
+      <form id="entryForm" novalidate>
+        <label>Type</label>
+        <div class="seg">
+          <button type="button" class="seg-btn plus active" id="signPlus">+ Plus</button>
+          <button type="button" class="seg-btn minus" id="signMinus">− Minus</button>
+        </div>
+
+        <label for="enAmount">Amount</label>
+        <input type="number" id="enAmount" min="0.01" step="0.01" placeholder="0.00" required />
+
+        <label for="enDesc">Description (optional)</label>
+        <textarea id="enDesc" rows="2" placeholder="Details of this entry"></textarea>
+
+        <div class="line-total">New total: <strong id="enNewTotal"></strong></div>
+        <p class="muted small">Date and time are saved automatically.</p>
+        <div id="entryMsg" class="message" role="alert"></div>
+        <button type="submit" id="enSubmit">Save entry</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== KHATA: HISTORY POPUP ===== -->
+  <div class="modal hidden" id="historyModal">
+    <div class="modal-box wide">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3 id="hsName"></h3>
+      <p class="muted small">Total: <strong id="hsTotal"></strong></p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Time</th><th>Amount</th><th>Description</th></tr></thead>
+          <tbody id="hsBody"></tbody>
+        </table>
+        <p id="hsEmpty" class="empty hidden">No entries yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== UNIVERSAL PIN POPUP (keep this one last, it opens on top of other popups) ===== -->
+  <div class="modal hidden" id="pinModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3 id="pinPromptTitle">Enter PIN</h3>
+      <p class="muted small">Enter your PIN to continue.</p>
+      <form id="pinPromptForm" novalidate>
+        <input type="password" id="pinPromptInput" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••" />
+        <div id="pinPromptMsg" class="message" role="alert"></div>
+        <button type="submit" id="pinPromptBtn">Confirm</button>
       </form>
     </div>
   </div>
