@@ -10,7 +10,7 @@ const LOW_STOCK = 5;              // quantity at or below this shows a low-stock
 const KEEP_DAYS = 30;             // how far back the date picker goes (SQL cleanup also uses 30)
 const IMAGE_BUCKET = "product-images";
 const MAX_IMAGE_SIDE = 700;       // product images are shrunk to this size before upload
-const SHOP_NAME = "Shop Portal";   // printed at the top of the PDF bill
+const SHOP_NAME = "My Shop";       // used on the bill only if no shop name is saved in Shop Info
 const SHOP_ADDRESS = "";          // optional line under the shop name on the bill
 const SHOP_PHONE = "";            // optional phone number on the bill
 
@@ -1700,8 +1700,8 @@ $("homeBillBtn").addEventListener("click", () => {
 });
 
 // ====== SHOP INFO ======
-// One shared row (id = 1) in the shop_info table. The logo lives in the same storage bucket
-// as the product pictures. Shown on Home (banner) and printed at the top of the PDF bill.
+// One row per user (user_id) in the shop_info table, so every user has their own shop details.
+// The logo lives in the same storage bucket as the product pictures. Shown on Home (banner) and printed at the top of the PDF bill.
 let shopInfo = null;          // saved shop details (null until the first save)
 let shopLogoData = null;      // logo prepared for the PDF: { dataUrl, w, h, format }
 let pendingLogoFile = null;   // new logo chosen but not saved yet
@@ -1772,7 +1772,7 @@ function renderShopBanner() {
 }
 
 async function loadShopInfo() {
-  const { data, error } = await supabaseClient.from("shop_info").select("*").eq("id", 1).maybeSingle();
+  const { data, error } = await supabaseClient.from("shop_info").select("*").eq("user_id", currentUser.id).maybeSingle();
   if (error) console.error("Shop info could not be loaded:", error.message);
   shopInfo = error ? null : data;
   renderShopBanner();
@@ -1894,7 +1894,7 @@ $("shopForm").addEventListener("submit", async (e) => {
     }
 
     const payload = {
-      id: 1,
+      user_id: currentUser.id,
       shop_name: name,
       owner_name: owner,
       phone,
@@ -1909,7 +1909,7 @@ $("shopForm").addEventListener("submit", async (e) => {
       logo_path: logoPath,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabaseClient.from("shop_info").upsert(payload);
+    const { error } = await supabaseClient.from("shop_info").upsert(payload, { onConflict: "user_id" });
     if (error) {
       if (uploadedPath) await supabaseClient.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
       throw error;
