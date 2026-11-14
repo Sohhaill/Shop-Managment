@@ -78,6 +78,7 @@ function closeModal(id) {
   $(id).classList.add("hidden");
   if (id === "pinModal") cancelPin();      // a closed PIN popup counts as "cancelled"
   if (id === "entryModal") entryPin = null; // forget the PIN when the entry popup closes
+  if (id === "balanceModal") balancePin = null; // same for the Balance edit popup
 }
 
 document.querySelectorAll(".modal").forEach((m) => {
@@ -98,6 +99,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     $("view-" + btn.dataset.view).classList.remove("hidden");
     if (btn.dataset.view === "sales") loadSalesForDate();
     if (btn.dataset.view === "khata") loadKhata();
+    if (btn.dataset.view === "balance") loadBalances();
     if (btn.dataset.view === "pin") loadPinStatus();
   });
 });
@@ -535,6 +537,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   setupSalesDate();
   await loadProducts();
   await loadTodaySales();
+  await loadBalances();
 })();
 // ====== MESSAGES FOR PIN / KHATA DATABASE ANSWERS ======
 function statusMessage(status) {
@@ -545,6 +548,8 @@ function statusMessage(status) {
     case "nopin": return "No PIN set yet. Create one in the PIN & Password tab.";
     case "exists": return "This name is already in your Khata. Use Edit entry on that person.";
     case "invalid": return "Please check the details and try again.";
+    case "insufficient": return "Balance is less than this amount.";
+    case "notfound": return "This entry no longer exists. Refresh the page.";
     default: return "Not allowed.";
   }
 }
@@ -911,3 +916,207 @@ $("customForm").addEventListener("submit", async (e) => {
   await loadTodaySales();
   toast("Custom entry added");
 });
+// ====== BALANCE ======
+// Home bar + Balance tab. Add needs no PIN; Edit and Delete ask for the PIN.
+// Send / Receive (Home bar popup) change the balance, and only the optional
+// "amount to be add in sale" goes into today's sale, never the actual amount.
+let balances = [];
+let editingBalance = null;  // entry being edited (null = adding new)
+let balancePin = null;      // PIN typed for the open Edit popup
+let txBalance = null;       // entry shown in the Send / Receive popup
+
+async function loadBalances() {
+  const { data, error } = await supabaseClient
+    .from("balances")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) return toast(error.message, "error");
+  balances = data;
+  renderBalanceTable();
+  renderBalanceBar();
+}
+
+// Home: top bar with every entry's title and total
+function renderBalanceBar() {
+  const list = $("balanceBarList");
+  list.innerHTML = "";
+
+  if (!balances.length) {
+    list.appendChild(el("span", "bb-empty", "No balance entries yet. Add one in the Balance tab."));
+    return;
+  }
+
+  balances.forEach((b) => {
+    const chip = el("button", "bb-chip");
+    chip.type = "button";
+    chip.title = b.title;
+    chip.appendChild(el("span", "bb-title", b.title));
+    chip.appendChild(el("span", "bb-amount", money(b.amount)));
+    chip.addEventListener("click", () => openTxModal(b));
+    list.appendChild(chip);
+  });
+}
+
+// Balance tab: table
+function renderBalanceTable() {
+  const body = $("balanceBody");
+  body.innerHTML = "";
+  $("balanceEmpty").classList.toggle("hidden", balances.length > 0);
+  $("bTotal").textContent = money(balances.reduce((s, b) => s + Number(b.amount), 0));
+  $("bCount").textContent = balances.length;
+
+  balances.forEach((b) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "", b.title));
+    tr.appendChild(el("td", "balance-amount", money(b.amount)));
+    tr.appendChild(el("td", "desc", b.description || "-"));
+
+    const act = el("td", "actions");
+    [
+      ["Edit", "", () => startEditBalance(b)],
+      ["Delete", "danger", () => deleteBalance(b)],
+    ].forEach(([label, cls, fn]) => {
+      const btn = el("button", "act-btn " + cls, label);
+      btn.type = "button";
+      btn.addEventListener("click", fn);
+      act.appendChild(btn);
+    });
+    tr.appendChild(act);
+    body.appendChild(tr);
+  });
+}
+
+// Add / edit popup
+function openBalanceModal(b) {
+  editingBalance = b;
+  $("bmTitle").textContent = b ? "Edit entry" : "Add entry";
+  $("bmSubmit").textContent = b ? "Save changes" : "Add entry";
+  $("bmName").value = b ? b.title : "";
+  $("bmAmount").value = b ? b.amount : "";
+  $("bmDesc").value = b && b.description ? b.description : "";
+  formMsg("balanceFormMsg", "");
+  openModal("balanceModal");
+  $("bmName").focus();
+}
+
+$("addBalanceBtn").addEventListener("click", () => {
+  balancePin = null;
+  openBalanceModal(null);
+});
+
+// Edit: PIN first, then the popup (the PIN is checked again on save)
+async function startEditBalance(b) {
+  const pin = await requirePin("Enter PIN to edit entry", checkPin);
+  if (!pin) return;
+  balancePin = pin;
+  openBalanceModal(b);
+}
+
+$("balanceForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("balanceFormMsg", "");
+
+  const title = $("bmName").value.trim();
+  const amount = parseFloat($("bmAmount").value);
+  const desc = $("bmDesc").value.trim();
+
+  if (!title) return formMsg("balanceFormMsg", "Enter a title.");
+  if (isNaN(amount) || amount < 0) return formMsg("balanceFormMsg", "Enter a valid balance amount.");
+
+  const isEdit = !!editingBalance;
+  const btn = $("bmSubmit");
+  btn.disabled = true;
+  const { data, error } = isEdit
+    ? await supabaseClient.rpc("balance_update", {
+        p_id: editingBalance.id,
+        p_title: title,
+        p_amount: amount,
+        p_description: desc || null,
+        p_pin: balancePin,
+      })
+    : await supabaseClient.rpc("balance_add", {
+        p_title: title,
+        p_amount: amount,
+        p_description: desc || null,
+      });
+  btn.disabled = false;
+
+  const msg = error ? error.message : statusMessage(data);
+  if (msg) return formMsg("balanceFormMsg", msg);
+
+  closeModal("balanceModal");
+  await loadBalances();
+  toast(isEdit ? "Entry updated" : "Entry added");
+});
+
+// Delete: confirm, then PIN, then delete
+async function deleteBalance(b) {
+  if (!confirm('Delete "' + b.title + '" (' + money(b.amount) + ')? This cannot be undone.')) return;
+
+  const pin = await requirePin("Enter PIN to delete entry", async (pin) => {
+    const { data, error } = await supabaseClient.rpc("balance_delete", { p_id: b.id, p_pin: pin });
+    return error ? error.message : statusMessage(data);
+  });
+  if (!pin) return;
+
+  await loadBalances();
+  toast("Entry deleted");
+}
+
+// Send / Receive popup (opened from the Home bar)
+function openTxModal(b) {
+  txBalance = b;
+  $("txTitle").textContent = b.title;
+  $("txBalance").textContent = money(b.amount);
+  $("txForm").reset();
+  formMsg("txMsg", "");
+  updateTxPreview();
+  openModal("txModal");
+  $("txAmount").focus();
+}
+
+function updateTxPreview() {
+  if (!txBalance) return;
+  const amt = parseFloat($("txAmount").value) || 0;
+  const cur = Number(txBalance.amount);
+  $("txAfterSend").textContent = money(cur - amt);
+  $("txAfterReceive").textContent = money(cur + amt);
+}
+$("txAmount").addEventListener("input", updateTxPreview);
+
+async function submitTx(type) {
+  formMsg("txMsg", "");
+
+  const amount = parseFloat($("txAmount").value);
+  const saleRaw = $("txSale").value.trim();
+  const sale = saleRaw === "" ? 0 : parseFloat(saleRaw);
+
+  if (isNaN(amount) || amount <= 0) return formMsg("txMsg", "Enter a valid actual amount.");
+  if (isNaN(sale) || sale < 0) return formMsg("txMsg", "Enter a valid sale amount.");
+  if (type === "send" && amount > Number(txBalance.amount)) {
+    return formMsg("txMsg", statusMessage("insufficient"));
+  }
+
+  const buttons = [$("txSend"), $("txReceive")];
+  buttons.forEach((b) => (b.disabled = true));
+  const { data, error } = await supabaseClient.rpc("balance_transaction", {
+    p_id: txBalance.id,
+    p_type: type,
+    p_amount: amount,
+    p_sale_amount: sale > 0 ? sale : null,
+    p_description: $("txDesc").value.trim() || null,
+    p_date: localDate(),
+  });
+  buttons.forEach((b) => (b.disabled = false));
+
+  const msg = error ? error.message : statusMessage(data);
+  if (msg) return formMsg("txMsg", msg);
+
+  closeModal("txModal");
+  await Promise.all([loadBalances(), loadTodaySales()]);
+  toast(type === "send" ? "Sent. Balance updated" : "Received. Balance updated");
+}
+
+$("txSend").addEventListener("click", () => submitTx("send"));
+$("txReceive").addEventListener("click", () => submitTx("receive"));
+$("txForm").addEventListener("submit", (e) => e.preventDefault());

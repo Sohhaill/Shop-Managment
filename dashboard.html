@@ -38,6 +38,7 @@
       <button type="button" class="nav-item" data-view="products">Manage Products</button>
       <button type="button" class="nav-item" data-view="sales">Sales Management</button>
       <button type="button" class="nav-item" data-view="khata">Khata</button>
+      <button type="button" class="nav-item" data-view="balance">Balance</button>
       <button type="button" class="nav-item" data-view="pin">PIN &amp; Password</button>
     </nav>
 
@@ -45,6 +46,13 @@
 
       <!-- ===== HOME ===== -->
       <section id="view-home" class="view">
+
+        <!-- Top bar: every balance with its title and total (click one to send / receive) -->
+        <div class="balance-bar" id="balanceBar">
+          <span class="bb-label">Balance</span>
+          <div class="bb-list" id="balanceBarList"></div>
+        </div>
+
         <div class="home-grid">
 
           <!-- Left: today's sale -->
@@ -179,6 +187,26 @@
             <tbody id="khataBody"></tbody>
           </table>
           <p id="khataEmpty" class="empty hidden">No one in Khata yet.</p>
+        </div>
+      </section>
+
+      <!-- ===== BALANCE ===== -->
+      <section id="view-balance" class="view hidden">
+        <div class="view-head">
+          <h2>Balance</h2>
+          <div class="view-head-right">
+            <div class="khata-summary">Total <strong id="bTotal">0</strong>· <span id="bCount">0</span> entries</div>
+            <button type="button" id="addBalanceBtn" class="primary-btn">+ Add entry</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>Title</th><th>Balance</th><th>Description</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="balanceBody"></tbody>
+          </table>
+          <p id="balanceEmpty" class="empty hidden">No balance entries yet. Click "Add entry".</p>
         </div>
       </section>
 
@@ -321,6 +349,57 @@
         </table>
         <p id="hsEmpty" class="empty hidden">No entries yet.</p>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== BALANCE: ADD / EDIT ENTRY POPUP ===== -->
+  <div class="modal hidden" id="balanceModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3 id="bmTitle">Add entry</h3>
+      <form id="balanceForm" novalidate>
+        <label for="bmName">Title</label>
+        <input type="text" id="bmName" placeholder="e.g. Easypaisa" required />
+
+        <label for="bmAmount">Balance amount</label>
+        <input type="number" id="bmAmount" min="0" step="0.01" placeholder="0.00" required />
+
+        <label for="bmDesc">Description (optional)</label>
+        <textarea id="bmDesc" rows="2" placeholder="Details"></textarea>
+
+        <div id="balanceFormMsg" class="message" role="alert"></div>
+        <button type="submit" id="bmSubmit">Save entry</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== BALANCE: SEND / RECEIVE POPUP (opens from the Home bar) ===== -->
+  <div class="modal hidden" id="txModal">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <h3 id="txTitle"></h3>
+      <p class="muted small">Current balance: <strong id="txBalance"></strong></p>
+      <form id="txForm" novalidate>
+        <label for="txAmount">Actual amount</label>
+        <input type="number" id="txAmount" min="0.01" step="0.01" placeholder="0.00" required />
+
+        <label for="txDesc">Description (optional)</label>
+        <textarea id="txDesc" rows="2" placeholder="Details"></textarea>
+
+        <label for="txSale">Amount to be add in sale (optional)</label>
+        <input type="number" id="txSale" min="0" step="0.01" placeholder="0.00" />
+        <p class="muted small">Only this amount goes into today's sale. The actual amount does not.</p>
+
+        <div class="line-total tx-preview">
+          <div>After send: <strong id="txAfterSend"></strong></div>
+          <div>After receive: <strong id="txAfterReceive"></strong></div>
+        </div>
+        <div id="txMsg" class="message" role="alert"></div>
+        <div class="tx-buttons">
+          <button type="button" id="txSend" class="tx-btn send">Send</button>
+          <button type="button" id="txReceive" class="tx-btn receive">Receive</button>
+        </div>
+      </form>
     </div>
   </div>
 
