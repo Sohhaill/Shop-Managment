@@ -21,16 +21,20 @@
       }
     </script>
     <link rel="stylesheet" href="./assets/style.css" />
-    <link rel="stylesheet" href="./assets/dashboard.css" />
+        <link rel="stylesheet" href="./assets/dashboard.css" />
+    <link rel="stylesheet" href="./assets/calculator.css" />
     <link rel="icon" type="image/png" href="./assets/favicon.jpg" />
   </head>
   <body class="app-body">
     <header class="topbar">
-      <div class="brand">
-        <img
-          style="width: 80px; height: 80px; border-radius: 49px"
-          src="./assets/shop ease.jpg"
-        />
+      <div class="topbar-left">
+        <div class="brand">
+          <img
+            style="width: 80px; height: 80px; border-radius: 49px"
+            src="./assets/shop ease.jpg"
+          />
+        </div>
+       
       </div>
       <div style="
     display: flex;
@@ -45,10 +49,26 @@
         <p style="
     font-size: 11px;
     font-style: italic;
-" >Dukan ka Kam, <span> Assan</span></p>
+" >Dukan ka Kam, <span style="
+    color: var(--accent);
+"> Assan</span></p>
       </div>
       <div class="topbar-right">
         <span id="userName" class="user-name"></span>
+         <button
+          type="button"
+          id="calcBtn"
+          class="theme-btn"
+          title="Calculator"
+          aria-label="Open calculator"
+        >
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" />
+            <rect x="8" y="5" width="8" height="4" rx="1" />
+            <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01" />
+          </svg>
+        </button>
         <button
           type="button"
           id="themeToggle"
@@ -1124,6 +1144,45 @@
       </div>
     </div>
 
+    <div class="modal hidden" id="calcModal">
+      <div class="modal-box calc-box">
+        <button type="button" class="modal-close" data-close aria-label="Close">
+          &times;
+        </button>
+        <h3>Calculator</h3>
+        <div class="calc-screen">
+          <div class="calc-expr" id="calcExpr"></div>
+          <div class="calc-main" id="calcMain">0</div>
+        </div>
+        <div class="calc-keys">
+          <button type="button" class="fn" data-key="C">C</button>
+          <button type="button" class="fn" data-key="back" aria-label="Backspace">&#9003;</button>
+          <button type="button" class="fn" data-key="%">%</button>
+          <button type="button" class="op" data-key="/" aria-label="Divide">&divide;</button>
+
+          <button type="button" data-key="7">7</button>
+          <button type="button" data-key="8">8</button>
+          <button type="button" data-key="9">9</button>
+          <button type="button" class="op" data-key="*" aria-label="Multiply">&times;</button>
+
+          <button type="button" data-key="4">4</button>
+          <button type="button" data-key="5">5</button>
+          <button type="button" data-key="6">6</button>
+          <button type="button" class="op" data-key="-" aria-label="Minus">&minus;</button>
+
+          <button type="button" data-key="1">1</button>
+          <button type="button" data-key="2">2</button>
+          <button type="button" data-key="3">3</button>
+          <button type="button" class="op" data-key="+" aria-label="Plus">+</button>
+
+          <button type="button" class="fn" data-key="neg" aria-label="Change sign">&plusmn;</button>
+          <button type="button" data-key="0">0</button>
+          <button type="button" data-key=".">.</button>
+          <button type="button" class="eq" data-key="=">=</button>
+        </div>
+      </div>
+    </div>
+
     <div id="toast" class="toast hidden" role="status"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1131,5 +1190,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.9/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="./assets/dashboard.js"></script>
+    <script src="./assets/calculator.js"></script>
   </body>
 </html>
