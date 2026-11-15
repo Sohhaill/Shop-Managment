@@ -196,6 +196,9 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
   }
 }
 @media(max-width:768px){
+  .data-table {
+  width: max-content !important;
+}
   .brand img {
            width: 70px !important;
         height: 70px !important;

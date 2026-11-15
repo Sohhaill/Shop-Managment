@@ -142,6 +142,67 @@
       </section>
     </main>
 
+    <!-- RESET PASSWORD POPUP -->
+    <div class="modal hidden" id="pwModal">
+      <div class="modal-box">
+        <button type="button" class="modal-close" data-close aria-label="Close">
+          &times;
+        </button>
+        <h3>Reset password</h3>
+        <p class="modal-who" id="pwWho"></p>
+
+        <form id="pwForm" novalidate>
+          <label for="pwNew">New password</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="pwNew"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="At least 6 characters"
+            />
+            <button type="button" id="pwGen" class="act-btn">Generate</button>
+          </div>
+          <p class="hint">
+            You will tell this password to the user. They can change it later in
+            the PIN &amp; Password tab.
+          </p>
+          <div id="pwMsg" class="message" role="alert"></div>
+          <button type="submit" id="pwSave">Set new password</button>
+        </form>
+
+        <div id="pwDone" class="done-box hidden">
+          <p class="done-title">Password changed</p>
+          <p class="hint">Tell the user their new password:</p>
+          <div class="input-row">
+            <input type="text" id="pwShown" readonly />
+            <button type="button" id="pwCopy" class="act-btn">Copy</button>
+          </div>
+          <button type="button" id="pwClose" class="wide-btn" data-close>Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESET PIN POPUP -->
+    <div class="modal hidden" id="pinModal">
+      <div class="modal-box">
+        <button type="button" class="modal-close" data-close aria-label="Close">
+          &times;
+        </button>
+        <h3>Reset PIN</h3>
+        <p class="modal-who" id="pinWho"></p>
+        <p class="hint">
+          This removes the user's PIN. After that they can open the PIN &amp;
+          Password tab and set a new PIN.
+        </p>
+        <form id="pinForm" novalidate>
+          <div id="pinMsg" class="message" role="alert"></div>
+          <button type="submit" id="pinSave">Reset PIN</button>
+        </form>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="admin.js"></script>
   </body>

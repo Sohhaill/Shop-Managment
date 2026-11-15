@@ -927,6 +927,186 @@ async function showHistory(p) {
   });
 }
 
+// ---- Export backup: one PDF with every person and every entry ----
+async function fetchAllKhataEntries() {
+  const all = [];
+  const page = 1000; // Supabase returns at most 1000 rows per request
+  for (let from = 0; ; from += page) {
+    const { data, error } = await supabaseClient
+      .from("khata_entries")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .range(from, from + page - 1);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < page) break;
+  }
+  return all;
+}
+
+function buildKhataBackupPdf(people, entries) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 14;
+  const green = [31, 169, 113];
+  const ink = [30, 30, 30];
+  const gray = [110, 110, 110];
+  const red = [217, 54, 54];
+  const pm = (n) => CURRENCY + " " + Number(n).toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  const si = shopInfo || {};
+  const now = new Date();
+  const stamp = now.toLocaleDateString("en-GB") + " " +
+    now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  // ----- Page 1: header + summary of everyone -----
+  let textX = M;
+  if (shopLogoData) {
+    const box = 18;
+    const r = Math.min(box / shopLogoData.w, box / shopLogoData.h);
+    try {
+      doc.addImage(shopLogoData.dataUrl, shopLogoData.format, M, 10, shopLogoData.w * r, shopLogoData.h * r);
+      textX = M + box + 5;
+    } catch (e) { /* no logo in the backup if it can't be drawn */ }
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(...ink);
+  doc.text(doc.splitTextToSize(si.shop_name || SHOP_NAME, W - M - 60 - textX), textX, 17);
+  doc.setFontSize(15);
+  doc.setTextColor(...green);
+  doc.text("KHATA BACKUP", W - M, 17, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...gray);
+  doc.text("Created: " + stamp, W - M, 23, { align: "right" });
+
+  const total = people.reduce((s, p) => s + Number(p.total), 0);
+  const owing = people.filter((p) => Number(p.total) > 0).length;
+  doc.setDrawColor(...green);
+  doc.setLineWidth(0.7);
+  doc.line(M, 31, W - M, 31);
+  doc.setFontSize(10.5);
+  doc.setTextColor(...ink);
+  doc.text(
+    "People: " + people.length + "     Still owe money: " + owing + "     Total balance: " + pm(total),
+    M, 38
+  );
+
+  const colorTotal = (d) => {
+    if (d.section === "body" && d.column.index === 3) {
+      const v = Number(people[d.row.index].total);
+      d.cell.styles.textColor = v > 0 ? red : green;
+      d.cell.styles.fontStyle = "bold";
+    }
+  };
+  doc.autoTable({
+    startY: 43,
+    margin: { left: M, right: M, bottom: 20 },
+    head: [["#", "Name", "Phone", "Total", "Last entry"]],
+    body: people.map((p, i) => [
+      i + 1, p.name, p.phone || "-", pm(p.total), p.last_entry ? fmtDateTime(p.last_entry) : "-",
+    ]),
+    theme: "striped",
+    styles: { font: "helvetica", fontSize: 9.5, cellPadding: 2.6, textColor: ink },
+    headStyles: { fillColor: green, textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 247, 246] },
+    columnStyles: { 0: { cellWidth: 10, halign: "center" }, 3: { halign: "right" } },
+    didParseCell: (d) => {
+      if (d.section === "head" && d.column.index === 3) d.cell.styles.halign = "right";
+      colorTotal(d);
+    },
+  });
+
+  // ----- Then each person with every entry -----
+  const byPerson = {};
+  entries.forEach((en) => { (byPerson[en.person_id] = byPerson[en.person_id] || []).push(en); });
+
+  people.forEach((p) => {
+    const list = byPerson[p.id] || [];
+    doc.addPage();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(...ink);
+    doc.text(doc.splitTextToSize(p.name, W - M * 2 - 50), M, 18);
+    doc.setFontSize(12);
+    doc.setTextColor(...(Number(p.total) > 0 ? red : green));
+    doc.text(pm(p.total), W - M, 18, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...gray);
+    doc.text(
+      (p.phone ? "Phone: " + p.phone + "     " : "") + "Entries: " + list.length,
+      M, 25
+    );
+
+    doc.autoTable({
+      startY: 29,
+      margin: { left: M, right: M, bottom: 20 },
+      head: [["Date", "Time", "Amount", "Description"]],
+      body: list.length
+        ? list.map((en) => {
+            const a = Number(en.amount);
+            return [
+              fmtDate(en.entry_date),
+              new Date(en.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+              (a > 0 ? "+ " : "- ") + pm(Math.abs(a)),
+              en.description || "-",
+            ];
+          })
+        : [["No entries", "", "", ""]],
+      theme: "striped",
+      styles: { font: "helvetica", fontSize: 9.5, cellPadding: 2.6, textColor: ink },
+      headStyles: { fillColor: green, textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [244, 247, 246] },
+      columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 20 }, 2: { cellWidth: 36, halign: "right" } },
+      didParseCell: (d) => {
+        if (d.section === "head" && d.column.index === 2) d.cell.styles.halign = "right";
+        if (d.section === "body" && d.column.index === 2 && list.length) {
+          d.cell.styles.textColor = Number(list[d.row.index].amount) > 0 ? red : green;
+        }
+      },
+    });
+  });
+
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...gray);
+    doc.text((si.shop_name || SHOP_NAME) + " - Khata backup, " + stamp, M, H - 8);
+    doc.text("Page " + i + " of " + pages, W - M, H - 8, { align: "right" });
+  }
+  return doc;
+}
+
+$("exportKhataBtn").addEventListener("click", async () => {
+  if (!khataPeople.length) return toast("There is no one in Khata to export.", "error");
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    return toast("The PDF library could not load. Check the internet and refresh the page.", "error");
+  }
+  const btn = $("exportKhataBtn");
+  btn.disabled = true;
+  btn.textContent = "Preparing...";
+  try {
+    await loadKhata(); // newest totals
+    const entries = await fetchAllKhataEntries();
+    if (shopInfo && shopInfo.logo_path && !shopLogoData) await prepareLogoForPdf();
+    buildKhataBackupPdf(khataPeople, entries).save("Khata-backup-" + localDate() + ".pdf");
+    toast("Backup downloaded");
+  } catch (e) {
+    toast((e && e.message) || "Could not create the backup.", "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Export backup (PDF)";
+  }
+});
+
 // Edit entry: PIN first, then the plus/minus popup
 async function startEditEntry(p) {
   const pin = await requirePin("Enter PIN to edit entry", checkPin);

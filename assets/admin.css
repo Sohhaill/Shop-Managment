@@ -1,9 +1,31 @@
-.section-title { margin: 28px 0 14px; font-size: 18px; }
+/* ===== Admin panel layout =====
+   The shared .center class centres its child and shrinks it to its content.
+   For the admin panel we want the dashboard to use the full width instead. */
+.center { align-items: flex-start; }
+#loginCard { align-self: center; margin: 0 auto; }
 
-.tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.dashboard {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.section-title { margin: 0 0 4px; font-size: 22px; }
+#welcomeText { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+
+/* ===== Tabs ===== */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
 
 .tab {
-  padding: 8px 14px;
+  flex: 0 0 auto;
+  padding: 9px 16px;
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
@@ -11,8 +33,10 @@
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .2s, color .2s;
 }
-.tab:hover { color: var(--text); }
+.tab:hover { color: var(--text); border-color: var(--accent); }
 .tab.active { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 
 .count {
@@ -23,6 +47,7 @@
   background: rgba(128, 128, 128, .25);
 }
 
+/* ===== Users table (desktop) ===== */
 .table-wrap {
   background: var(--card);
   border: 1px solid var(--border);
@@ -31,14 +56,22 @@
 }
 
 .users-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.users-table th, .users-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
-.users-table th { color: var(--muted); font-weight: 500; font-size: 13px; }
+.users-table th,
+.users-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.users-table th { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+.users-table td { overflow-wrap: anywhere; }
 .users-table tr:last-child td { border-bottom: none; }
+.users-table tbody tr:hover { background: rgba(128, 128, 128, .06); }
 
-.actions { display: flex; gap: 8px; }
+.users-table td.actions .act-btn { margin: 3px 8px 3px 0; }
 
 .act-btn {
-  padding: 6px 12px;
+  padding: 7px 12px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: transparent;
@@ -46,11 +79,131 @@
   font-family: inherit;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .2s, color .2s, background .2s;
 }
+.act-btn:hover { border-color: var(--accent); color: var(--accent); }
 .act-btn.approve { border-color: var(--accent); color: var(--accent); }
 .act-btn.approve:hover { background: var(--accent); color: var(--on-accent); }
 .act-btn.reject { border-color: var(--error); color: var(--error); }
-.act-btn.reject:hover { background: var(--error); color: #fff; }
+.act-btn.reject:hover { background: var(--error); color: #fff; border-color: var(--error); }
 .act-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .empty { padding: 28px; text-align: center; color: var(--muted); }
+
+#panelMessage { margin-top: 16px; }
+
+/* ===== Popups ===== */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .6);
+}
+.modal.hidden { display: none; }
+
+.modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 26px;
+}
+.modal-box h3 { font-size: 19px; margin-bottom: 4px; padding-right: 30px; }
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text); background: rgba(128, 128, 128, .2); }
+
+.modal-who { color: var(--muted); font-size: 14px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.hint { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.5; }
+
+.input-row { display: flex; gap: 8px; align-items: stretch; }
+.input-row input { flex: 1; min-width: 0; }
+.input-row .act-btn { padding: 0 14px; }
+
+.done-box { margin-top: 14px; }
+.done-title { color: var(--accent); font-weight: 600; font-size: 15px; }
+
+.wide-btn {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wide-btn:hover { background: var(--accent-dark); }
+
+/* ===== Phone: each user becomes a card, no sideways scrolling ===== */
+@media (max-width: 768px) {
+  .center {
+    padding: 16px 16px 90px; /* bottom space so the fixed bar does not cover the last card */
+    min-height: auto;
+  }
+  .section-title { font-size: 20px; }
+
+  .table-wrap { background: transparent; border: none; border-radius: 0; overflow: visible; }
+
+  .users-table, .users-table tbody, .users-table tr, .users-table td { display: block; width: 100%; }
+  .users-table thead { display: none; }
+
+  .users-table tr {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 6px 16px 14px;
+    margin-bottom: 12px;
+  }
+  .users-table tbody tr:hover { background: var(--card); }
+
+  .users-table td,
+  .users-table tr:not(:last-child) td.actions {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .users-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 2px;
+  }
+
+  .users-table td.actions { border-bottom: none !important; padding-bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .users-table td.actions::before { width: 100%; margin-bottom: 0; }
+  .users-table td.actions .act-btn { flex: 1 1 calc(50% - 8px); margin: 0; padding: 10px 12px; text-align: center; }
+
+  .modal { align-items: flex-end; padding: 0; }
+  .modal-box {
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    padding: 24px 20px 28px;
+    max-height: 92vh;
+  }
+}
