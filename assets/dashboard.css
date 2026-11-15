@@ -309,7 +309,7 @@ button.admin-btn {
   overflow-x: auto;
 }
 .data-table {
-  width: 100%;
+  width: max-content;
   border-collapse: collapse;
   font-size: 14px;
 }

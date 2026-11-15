@@ -173,3 +173,19 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
 .message.success { color: var(--accent); }
 
 .hidden { display: none; }
+
+@media(max-width:768px){
+  .brand img {
+    width: 50px !important;
+    height: 50px !important;
+}
+h2.p_name {
+    font-size: 26px !important;
+    p{
+          font-size: 9px !important;
+    }
+}
+div#balanceBar {
+    display: grid;
+}
+}
