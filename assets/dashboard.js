@@ -109,6 +109,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "lowstock") loadProducts(); // fresh numbers every time the tab opens
     if (btn.dataset.view === "pin") loadPinStatus();
     if (btn.dataset.view === "shopinfo") fillShopForm();
+    if (btn.dataset.view === "tasks") loadTasks();
   });
 });
 
@@ -756,6 +757,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   await loadProducts();
   await loadTodaySales();
   await loadBalances();
+  loadTasks(true); // task badge + Home reminders (quiet: no error popup at start)
 })();
 // ====== MESSAGES FOR PIN / KHATA DATABASE ANSWERS ======
 function statusMessage(status) {
@@ -2364,3 +2366,236 @@ $("shopForm").addEventListener("submit", async (e) => {
 $("shopBannerEdit").addEventListener("click", () => {
   document.querySelector('.nav-item[data-view="shopinfo"]').click();
 });
+
+
+// ====== TASK REMINDER ======
+// Tasks live in the "tasks" table (one set per user). "Complete" deletes the task.
+// A task can have a date. Tasks due today or overdue are counted on the tab badge, and
+// they (plus every "very high" task) bounce on the Home page. Click one -> Task Reminder tab.
+const PRIORITY_RANK = { low: 1, medium: 2, high: 3, very_high: 4 };
+const PRIORITY_LABEL = { low: "Low", medium: "Medium", high: "High", very_high: "Very high" };
+
+let tasks = [];
+let taskFilter = "all";
+let editingTaskId = null;
+let tasksDay = localDate();   // the day the lists were last drawn for (to notice midnight)
+
+async function loadTasks(quiet) {
+  const { data, error } = await supabaseClient.from("tasks").select("*").order("created_at", { ascending: true });
+  if (error) {
+    console.error("Tasks could not be loaded:", error.message);
+    if (!quiet) formMsg("tkMsg", "Could not load tasks: " + error.message + " (Did you run tasks.sql in Supabase?)");
+    return;
+  }
+  tasks = data;
+  renderTasks();
+}
+
+// Whole days from today to the task date: 0 = today, 1 = tomorrow, -2 = two days ago
+function daysFromToday(dateStr) {
+  const a = new Date(dateStr + "T00:00:00");
+  const b = new Date(localDate() + "T00:00:00");
+  return Math.round((a - b) / 86400000);
+}
+
+function dueLabel(t) {
+  if (!t.due_date) return { text: "No date", cls: "none" };
+  const d = daysFromToday(t.due_date);
+  if (d === 0) return { text: "Today", cls: "today" };
+  if (d === 1) return { text: "Tomorrow", cls: "soon" };
+  if (d < 0) return { text: "Overdue by " + -d + (d === -1 ? " day" : " days"), cls: "overdue" };
+  return { text: fmtDate(t.due_date), cls: "soon" };
+}
+
+function taskState(t) {
+  if (!t.due_date) return "nodate";
+  const d = daysFromToday(t.due_date);
+  return d < 0 ? "overdue" : d === 0 ? "today" : "upcoming";
+}
+
+// biggest priority first, then the nearest date, then the oldest
+function sortTasks(list) {
+  return list.slice().sort(
+    (a, b) =>
+      PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] ||
+      (a.due_date || "9999-12-31").localeCompare(b.due_date || "9999-12-31") ||
+      String(a.created_at).localeCompare(String(b.created_at))
+  );
+}
+
+function openTasksTab() {
+  document.querySelector('.nav-item[data-view="tasks"]').click();
+}
+
+function renderTasks() {
+  tasksDay = localDate();
+
+  // counts for the filters and the tab badge (today + overdue need attention)
+  const counts = { all: tasks.length, today: 0, overdue: 0, upcoming: 0, nodate: 0 };
+  tasks.forEach((t) => counts[taskState(t)]++);
+  $("tfAll").textContent = counts.all;
+  $("tfToday").textContent = counts.today;
+  $("tfOverdue").textContent = counts.overdue;
+  $("tfUpcoming").textContent = counts.upcoming;
+  $("tfNoDate").textContent = counts.nodate;
+
+  const due = counts.today + counts.overdue;
+  $("taskBadge").textContent = due;
+  $("taskBadge").classList.toggle("hidden", due === 0);
+  $("taskSummary").textContent = counts.all
+    ? counts.all + (counts.all === 1 ? " task" : " tasks") + (due ? " · " + due + " due today / overdue" : "")
+    : "";
+
+  document.querySelectorAll(".task-filter").forEach((b) => b.classList.toggle("active", b.dataset.filter === taskFilter));
+
+  // the list
+  const shown = sortTasks(taskFilter === "all" ? tasks : tasks.filter((t) => taskState(t) === taskFilter));
+  const list = $("taskList");
+  list.innerHTML = "";
+  $("taskEmpty").classList.toggle("hidden", shown.length > 0);
+  $("taskEmpty").textContent = tasks.length
+    ? "No tasks in this list."
+    : "No tasks yet. Add your first task above.";
+
+  shown.forEach((t) => {
+    const due = dueLabel(t);
+    const li = el("li", "task-item pr-" + t.priority + " st-" + taskState(t));
+
+    const main = el("div", "task-main");
+    main.appendChild(el("div", "task-title", t.title));
+    const meta = el("div", "task-meta");
+    meta.appendChild(el("span", "pr-tag pr-" + t.priority, PRIORITY_LABEL[t.priority]));
+    meta.appendChild(el("span", "due-tag due-" + due.cls, due.text));
+    if (t.note) meta.appendChild(el("span", "task-note", t.note));
+    main.appendChild(meta);
+    li.appendChild(main);
+
+    const act = el("div", "task-actions");
+    const edit = el("button", "act-btn", "Edit");
+    edit.type = "button";
+    edit.addEventListener("click", () => startEditTask(t));
+    const done = el("button", "act-btn task-done", "Complete");
+    done.type = "button";
+    done.addEventListener("click", () => completeTask(t, li, done));
+    act.appendChild(edit);
+    act.appendChild(done);
+    li.appendChild(act);
+
+    list.appendChild(li);
+  });
+
+  renderHomeTasks();
+}
+
+// Home page: very high priority tasks + tasks due today / overdue. They bounce forever.
+function renderHomeTasks() {
+  const urgent = sortTasks(
+    tasks.filter((t) => t.priority === "very_high" || (t.due_date && daysFromToday(t.due_date) <= 0))
+  );
+  const box = $("homeTasks");
+  const list = $("homeTasksList");
+  list.innerHTML = "";
+  box.classList.toggle("hidden", urgent.length === 0);
+
+  urgent.forEach((t, i) => {
+    const due = dueLabel(t);
+    const chip = el("button", "ht-chip pr-" + t.priority + (t.priority === "very_high" ? " dance" : " bounce"));
+    chip.type = "button";
+    chip.style.animationDelay = (i % 8) * 0.15 + "s"; // chips do not all jump together
+    chip.title = "Open Task Reminder";
+    chip.appendChild(el("span", "ht-title", t.title));
+    chip.appendChild(el("span", "ht-meta", PRIORITY_LABEL[t.priority] + (t.due_date ? " · " + due.text : "")));
+    chip.addEventListener("click", openTasksTab);
+    list.appendChild(chip);
+  });
+}
+
+// Filters
+document.querySelectorAll(".task-filter").forEach((b) => {
+  b.addEventListener("click", () => {
+    taskFilter = b.dataset.filter;
+    renderTasks();
+  });
+});
+
+// Add / edit form
+function resetTaskForm() {
+  editingTaskId = null;
+  $("taskForm").reset();
+  $("tkPriority").value = "medium";
+  $("tkDate").min = localDate();
+  $("taskFormTitle").textContent = "Add new task";
+  $("tkSubmit").textContent = "Add task";
+  $("tkCancel").classList.add("hidden");
+  formMsg("tkMsg", "");
+}
+
+function startEditTask(t) {
+  editingTaskId = t.id;
+  $("tkTitle").value = t.title;
+  $("tkPriority").value = t.priority;
+  $("tkDate").removeAttribute("min"); // an older date may already be set
+  $("tkDate").value = t.due_date || "";
+  $("tkNote").value = t.note || "";
+  $("taskFormTitle").textContent = "Edit task";
+  $("tkSubmit").textContent = "Save changes";
+  $("tkCancel").classList.remove("hidden");
+  formMsg("tkMsg", "");
+  $("taskForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("tkTitle").focus();
+}
+
+$("tkCancel").addEventListener("click", resetTaskForm);
+
+$("taskForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("tkMsg", "");
+
+  const title = $("tkTitle").value.trim();
+  const priority = $("tkPriority").value;
+  const date = $("tkDate").value;
+  const note = $("tkNote").value.trim();
+
+  if (!title) return formMsg("tkMsg", "Please write the task title.");
+  if (!PRIORITY_RANK[priority]) return formMsg("tkMsg", "Please choose a priority.");
+
+  const row = { title, priority, due_date: date || null, note: note || null };
+
+  const btn = $("tkSubmit");
+  btn.disabled = true;
+  const res = editingTaskId
+    ? await supabaseClient.from("tasks").update(row).eq("id", editingTaskId)
+    : await supabaseClient.from("tasks").insert(row);
+  btn.disabled = false;
+
+  if (res.error) return formMsg("tkMsg", res.error.message);
+
+  const wasEditing = !!editingTaskId;
+  resetTaskForm();
+  await loadTasks();
+  toast(wasEditing ? "Task updated" : "Task added");
+});
+
+// Complete = delete the task
+async function completeTask(t, li, btn) {
+  btn.disabled = true;
+  const { error } = await supabaseClient.from("tasks").delete().eq("id", t.id);
+  if (error) {
+    btn.disabled = false;
+    return toast(error.message, "error");
+  }
+  if (editingTaskId === t.id) resetTaskForm();
+  li.classList.add("leaving"); // short fade-out, then the list is redrawn
+  setTimeout(() => loadTasks(), 250);
+  toast("Task completed");
+}
+
+// When midnight passes (or the app comes back to the screen), "today" changes: redraw badge + Home
+setInterval(() => {
+  if (localDate() !== tasksDay) renderTasks();
+}, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && localDate() !== tasksDay) renderTasks();
+});
+
+$("tkDate").min = localDate();

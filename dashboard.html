@@ -139,6 +139,9 @@
         <button type="button" class="nav-item" data-view="balance">
           Balance
         </button>
+        <button type="button" class="nav-item" data-view="tasks">
+          Task Reminder <span class="nav-badge hidden" id="taskBadge">0</span>
+        </button>
         <button type="button" class="nav-item" data-view="shopinfo">
           Shop Info
         </button>
@@ -174,6 +177,12 @@
             >
               Generate Bill
             </button>
+          </div>
+
+          <!-- Tasks that need attention: very high priority + due today / overdue (click -> Task Reminder tab) -->
+          <div class="home-tasks hidden" id="homeTasks">
+            <span class="ht-label">Tasks</span>
+            <div class="ht-list" id="homeTasksList"></div>
           </div>
 
           <div class="home-grid">
@@ -591,6 +600,57 @@
 
         <!-- ===== PIN & PASSWORD ===== -->
         <!-- ===== SHOP INFO ===== -->
+        <!-- ===== TASK REMINDER ===== -->
+        <section id="view-tasks" class="view hidden">
+          <div class="view-head">
+            <h2>Task Reminder</h2>
+            <span class="muted small" id="taskSummary"></span>
+          </div>
+
+          <form id="taskForm" class="card-form task-form" novalidate>
+            <h3 id="taskFormTitle">Add new task</h3>
+            <div class="task-row">
+              <div class="span-2">
+                <label for="tkTitle">Task title *</label>
+                <input type="text" id="tkTitle" maxlength="120" placeholder="e.g. Pay shop rent" autocomplete="off" />
+              </div>
+              <div>
+                <label for="tkPriority">Priority *</label>
+                <select id="tkPriority">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                  <option value="very_high">Very high</option>
+                </select>
+              </div>
+              <div>
+                <label for="tkDate">Date (optional)</label>
+                <input type="date" id="tkDate" />
+              </div>
+              <div class="span-2">
+                <label for="tkNote">Note (optional)</label>
+                <input type="text" id="tkNote" maxlength="200" placeholder="Extra details" autocomplete="off" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" id="tkSubmit" style="width: fit-content">Add task</button>
+              <button type="button" id="tkCancel" class="act-btn hidden">Cancel edit</button>
+              <div id="tkMsg" class="message" role="alert"></div>
+            </div>
+          </form>
+
+          <div class="task-filters" id="taskFilters">
+            <button type="button" class="task-filter active" data-filter="all">All <span id="tfAll">0</span></button>
+            <button type="button" class="task-filter" data-filter="today">Today <span id="tfToday">0</span></button>
+            <button type="button" class="task-filter" data-filter="overdue">Overdue <span id="tfOverdue">0</span></button>
+            <button type="button" class="task-filter" data-filter="upcoming">Upcoming <span id="tfUpcoming">0</span></button>
+            <button type="button" class="task-filter" data-filter="nodate">No date <span id="tfNoDate">0</span></button>
+          </div>
+
+          <ul class="task-list" id="taskList"></ul>
+          <p id="taskEmpty" class="empty hidden"></p>
+        </section>
+
         <section id="view-shopinfo" class="view hidden">
           <div class="view-head"><h2>Shop Info</h2></div>
 
