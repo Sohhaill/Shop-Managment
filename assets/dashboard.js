@@ -2490,7 +2490,7 @@ function renderTasks() {
 // Home page: very high priority tasks + tasks due today / overdue. They bounce forever.
 function renderHomeTasks() {
   const urgent = sortTasks(
-    tasks.filter((t) => t.priority === "very_high" || (t.due_date && daysFromToday(t.due_date) <= 0))
+    tasks.filter((t) => t.priority === "very_high" || t.priority === "high" || (t.due_date && daysFromToday(t.due_date) <= 0))
   );
   const box = $("homeTasks");
   const list = $("homeTasksList");
