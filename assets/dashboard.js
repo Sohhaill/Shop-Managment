@@ -293,7 +293,7 @@ function renderTodaySales() {
     right.appendChild(el("strong", "", money(s.total)));
     const del = el("button", "icon-btn", "✕");
     del.type = "button";
-    del.title = "Remove (stock will be restored)";
+    del.title = sale_undoTitle(s);
     del.addEventListener("click", () => removeSale(s, del));
     right.appendChild(del);
 
@@ -307,21 +307,60 @@ function renderTodaySales() {
   renderBill();
 }
 
+function sale_undoTitle(s) {
+  return s.balance_id ? "Remove (balance will be restored)" : "Remove (stock will be restored)";
+}
+
+// A sale made by Balance Send / Receive remembers its balance (balance_id / type / amount).
+// Removing it puts that balance back: Send -> balance goes up, Receive -> balance goes down.
+function balanceUndoNote(sale) {
+  if (!sale.balance_id || sale.balance_amount == null) return "";
+  const b = balances.find((x) => String(x.id) === String(sale.balance_id));
+  if (!b) return ""; // that balance entry was deleted, nothing to put back
+  const up = sale.balance_type === "send";
+  return ' The balance "' + b.title + '" will also ' + (up ? "go up" : "go down") +
+    " by " + money(sale.balance_amount) + " (this undoes the " + (up ? "Send" : "Receive") + ").";
+}
+
+// Removes a sale. Returns null on success, or an error message.
+async function deleteSaleAndUndo(sale) {
+  const { data, error } = await supabaseClient.rpc("delete_sale_and_undo_balance", { p_sale_id: String(sale.id) });
+
+  if (error) {
+    // The balance_sale_link.sql script has not been run yet: use the old delete (balance is not undone)
+    if (error.code === "PGRST202" || /could not find the function/i.test(error.message || "")) {
+      const old = await supabaseClient.rpc("delete_sale", { p_sale_id: sale.id });
+      return old.error ? old.error.message : null;
+    }
+    return error.message;
+  }
+
+  switch (data) {
+    case "ok": return null;
+    case "insufficient":
+      return "Cannot remove this: it was a Receive of " + money(sale.balance_amount) +
+        " and the balance now has less than that.";
+    case "notfound": return "This sale no longer exists. Refresh the page.";
+    default: return "Not allowed.";
+  }
+}
+
 async function removeSale(sale, btn) {
-  const msg = sale.product_id
+  const note = balanceUndoNote(sale);
+  const msg = (sale.product_id
     ? 'Remove "' + sale.product_name + '" from today\'s sale? The quantity goes back to stock.'
-    : 'Remove "' + sale.product_name + '" from today\'s sale?';
+    : 'Remove "' + sale.product_name + '" from today\'s sale?') + note;
   if (!confirm(msg)) return;
 
   btn.disabled = true;
-  const { error } = await supabaseClient.rpc("delete_sale", { p_sale_id: sale.id });
-  if (error) {
+  const err = await deleteSaleAndUndo(sale);
+  if (err) {
     btn.disabled = false;
-    return toast(error.message, "error");
+    return toast(err, "error");
   }
 
-  await Promise.all([loadProducts(), loadTodaySales()]);
-  toast("Removed, stock restored");
+  await Promise.all([loadProducts(), loadTodaySales(), loadBalances()]);
+  toast(note ? "Removed, balance restored" : "Removed, stock restored");
 }
 
 // ====== ADD / EDIT PRODUCT POPUP ======
@@ -1376,14 +1415,14 @@ async function removeBillItem(sale, btn) {
   if (!confirm(msg)) return;
 
   btn.disabled = true;
-  const { error } = await supabaseClient.rpc("delete_sale", { p_sale_id: sale.id });
-  if (error) {
+  const err = await deleteSaleAndUndo(sale);
+  if (err) {
     btn.disabled = false;
-    return toast(error.message, "error");
+    return toast(err, "error");
   }
 
   billItems = billItems.filter((id) => String(id) !== String(sale.id));
-  await Promise.all([loadProducts(), loadTodaySales()]);
+  await Promise.all([loadProducts(), loadTodaySales(), loadBalances()]);
   toast("Removed, stock restored");
 }
 
