@@ -129,19 +129,23 @@
         <button type="button" class="nav-item" data-view="products">
           Manage Products
         </button>
+        <button type="button" class="nav-item" data-view="khata">Khata</button>
+         <button type="button" class="nav-item" data-view="balance">
+          Balance
+        </button>
         <button type="button" class="nav-item" data-view="lowstock">
           Low Stock <span class="nav-badge hidden" id="lowStockBadge">0</span>
         </button>
         <button type="button" class="nav-item" data-view="sales">
           Sales Management
         </button>
-        <button type="button" class="nav-item" data-view="khata">Khata</button>
-        <button type="button" class="nav-item" data-view="balance">
-          Balance
-        </button>
+        
+        
+       
         <button type="button" class="nav-item" data-view="tasks">
           Task Reminder <span class="nav-badge hidden" id="taskBadge">0</span>
         </button>
+        <button type="button" class="nav-item" data-view="suppliers">Suppliers</button>
         <button type="button" class="nav-item" data-view="shopinfo">
           Shop Info
         </button>
@@ -649,6 +653,68 @@
 
           <ul class="task-list" id="taskList"></ul>
           <p id="taskEmpty" class="empty hidden"></p>
+        </section>
+
+        <!-- ===== SUPPLIERS ===== -->
+        <section id="view-suppliers" class="view hidden">
+          <div class="view-head">
+            <h2>Suppliers</h2>
+            <span class="muted small" id="supCount"></span>
+          </div>
+
+          <form id="supForm" class="card-form sup-form" novalidate>
+            <h3 id="supFormTitle">Add supplier</h3>
+            <div class="sup-row">
+              <div>
+                <label for="spName">Supplier name *</label>
+                <input type="text" id="spName" maxlength="80" placeholder="Person name" autocomplete="off" />
+              </div>
+              <div>
+                <label for="spPhone">WhatsApp number *</label>
+                <input type="tel" id="spPhone" maxlength="30" placeholder="03xx..." autocomplete="off" />
+              </div>
+              <div>
+                <label for="spCompany">Company / shop (optional)</label>
+                <input type="text" id="spCompany" maxlength="80" placeholder="e.g. Ali Traders" autocomplete="off" />
+              </div>
+              <div>
+                <label for="spCity">City / address (optional)</label>
+                <input type="text" id="spCity" maxlength="120" placeholder="e.g. Mandi Bahauddin" autocomplete="off" />
+              </div>
+              <div class="span-2">
+                <label for="spItems">What they supply (optional)</label>
+                <input type="text" id="spItems" maxlength="150" placeholder="e.g. Cold drinks, biscuits" autocomplete="off" />
+              </div>
+              <div class="span-2">
+                <label for="spNote">Note (optional)</label>
+                <input type="text" id="spNote" maxlength="200" placeholder="e.g. Comes every Monday" autocomplete="off" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" id="spSubmit" style="width: fit-content">Add supplier</button>
+              <button type="button" id="spCancel" class="act-btn hidden">Cancel edit</button>
+              <div id="spMsg" class="message" role="alert"></div>
+            </div>
+          </form>
+
+          <div class="list-head">
+            <h3>All suppliers</h3>
+            <input type="search" id="spSearch" placeholder="Search name, company, items..." autocomplete="off" />
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Supplies</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="supBody"></tbody>
+            </table>
+            <p id="supEmpty" class="empty hidden"></p>
+          </div>
         </section>
 
         <section id="view-shopinfo" class="view hidden">

@@ -110,6 +110,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "pin") loadPinStatus();
     if (btn.dataset.view === "shopinfo") fillShopForm();
     if (btn.dataset.view === "tasks") loadTasks();
+    if (btn.dataset.view === "suppliers") loadSuppliers();
   });
 });
 
@@ -2487,7 +2488,7 @@ function renderTasks() {
   renderHomeTasks();
 }
 
-// Home page: very high priority tasks + tasks due today / overdue. They bounce forever.
+// Home page: very high + high priority tasks, and tasks due today / overdue. They ring forever.
 function renderHomeTasks() {
   const urgent = sortTasks(
     tasks.filter((t) => t.priority === "very_high" || t.priority === "high" || (t.due_date && daysFromToday(t.due_date) <= 0))
@@ -2599,3 +2600,150 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $("tkDate").min = localDate();
+
+
+// ====== SUPPLIERS ======
+// A simple address book of the people you buy from (table "suppliers", one list per user).
+// WhatsApp opens the chat with that supplier (same free click-to-chat link as the Khata reminder).
+let suppliers = [];
+let editingSupplierId = null;
+
+async function loadSuppliers() {
+  const { data, error } = await supabaseClient.from("suppliers").select("*").order("name");
+  if (error) {
+    formMsg("spMsg", "Could not load suppliers: " + error.message + " (Did you run suppliers.sql in Supabase?)");
+    return;
+  }
+  suppliers = data;
+  renderSuppliers();
+}
+
+function supplierGreeting(s) {
+  const si = shopInfo || {};
+  const owner = (si.owner_name || "").trim();
+  const shop = (si.shop_name || "").trim();
+  const sender = owner && shop ? owner + " (" + shop + ")" : owner || shop;
+  return "Assalam o Alaikum " + s.name + "," + (sender ? "\n" + sender + " ki taraf se baat kar raha hoon." : "");
+}
+
+function openSupplierWhatsApp(s) {
+  const num = whatsappNumber(s.phone);
+  if (!num) return toast("Add a valid WhatsApp number for " + s.name, "error");
+  window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(supplierGreeting(s)), "_blank", "noopener");
+}
+
+function renderSuppliers() {
+  const q = $("spSearch").value.trim().toLowerCase();
+  const list = suppliers.filter((s) =>
+    [s.name, s.company, s.items, s.city, s.phone].some((v) => (v || "").toLowerCase().includes(q))
+  );
+
+  $("supCount").textContent = suppliers.length + (suppliers.length === 1 ? " supplier" : " suppliers");
+  $("supEmpty").classList.toggle("hidden", list.length > 0);
+  $("supEmpty").textContent = suppliers.length ? "No supplier found." : "No suppliers yet. Add one above.";
+
+  const body = $("supBody");
+  body.innerHTML = "";
+
+  list.forEach((s) => {
+    const tr = document.createElement("tr");
+
+    const tdName = el("td");
+    tdName.appendChild(el("div", "sup-name", s.name));
+    const sub = [s.company, s.city].filter(Boolean).join(" · ");
+    if (sub) tdName.appendChild(el("div", "sup-sub", sub));
+    tr.appendChild(tdName);
+
+    tr.appendChild(el("td", "", s.phone));
+
+    const tdItems = el("td", "", s.items || "-");
+    if (s.note) tdItems.appendChild(el("div", "sup-sub", s.note));
+    tr.appendChild(tdItems);
+
+    const act = el("td", "actions");
+    [
+      ["WhatsApp", "wa", () => openSupplierWhatsApp(s), !whatsappNumber(s.phone)],
+      ["Edit", "", () => startEditSupplier(s)],
+      ["Delete", "danger", () => deleteSupplier(s)],
+    ].forEach(([label, cls, fn, disabled]) => {
+      const b = el("button", "act-btn " + cls, label);
+      b.type = "button";
+      if (disabled) b.disabled = true;
+      else b.addEventListener("click", fn);
+      act.appendChild(b);
+    });
+    tr.appendChild(act);
+    body.appendChild(tr);
+  });
+}
+$("spSearch").addEventListener("input", renderSuppliers);
+
+function resetSupplierForm() {
+  editingSupplierId = null;
+  $("supForm").reset();
+  $("supFormTitle").textContent = "Add supplier";
+  $("spSubmit").textContent = "Add supplier";
+  $("spCancel").classList.add("hidden");
+  formMsg("spMsg", "");
+}
+
+function startEditSupplier(s) {
+  editingSupplierId = s.id;
+  $("spName").value = s.name;
+  $("spPhone").value = s.phone;
+  $("spCompany").value = s.company || "";
+  $("spCity").value = s.city || "";
+  $("spItems").value = s.items || "";
+  $("spNote").value = s.note || "";
+  $("supFormTitle").textContent = "Edit supplier";
+  $("spSubmit").textContent = "Save changes";
+  $("spCancel").classList.remove("hidden");
+  formMsg("spMsg", "");
+  $("supForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("spName").focus();
+}
+$("spCancel").addEventListener("click", resetSupplierForm);
+
+$("supForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("spMsg", "");
+
+  const v = (id) => $(id).value.trim();
+  const name = v("spName");
+  const phone = v("spPhone");
+
+  if (!name) return formMsg("spMsg", "Please write the supplier's name.");
+  if (!phone) return formMsg("spMsg", "Please write the WhatsApp number.");
+  if (!whatsappNumber(phone)) return formMsg("spMsg", "This number does not look right. Example: 0300 1234567");
+
+  const row = {
+    name,
+    phone,
+    company: v("spCompany") || null,
+    city: v("spCity") || null,
+    items: v("spItems") || null,
+    note: v("spNote") || null,
+  };
+
+  const btn = $("spSubmit");
+  btn.disabled = true;
+  const res = editingSupplierId
+    ? await supabaseClient.from("suppliers").update(row).eq("id", editingSupplierId)
+    : await supabaseClient.from("suppliers").insert(row);
+  btn.disabled = false;
+  if (res.error) return formMsg("spMsg", res.error.message);
+
+  const wasEditing = !!editingSupplierId;
+  resetSupplierForm();
+  await loadSuppliers();
+  toast(wasEditing ? "Supplier updated" : "Supplier added");
+});
+
+async function deleteSupplier(s) {
+  if (!confirm('Delete supplier "' + s.name + '"? This cannot be undone.')) return;
+  const { error } = await supabaseClient.from("suppliers").delete().eq("id", s.id);
+  if (error) return toast(error.message, "error");
+  if (editingSupplierId === s.id) resetSupplierForm();
+  await loadSuppliers();
+  toast("Supplier deleted");
+}
