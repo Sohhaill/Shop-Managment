@@ -525,26 +525,83 @@ async function deleteProduct(p, btn) {
   toast("Product deleted");
 }
 
-// ====== SALE MANAGEMENT (pick a date) ======
+// ====== SALE MANAGEMENT (pick a date range + graphs) ======
+const SALES_PAGE = 1000;          // Supabase returns at most 1000 rows per request
+const TOP_ITEMS = 10;             // how many items the "most sold" graph shows
+let salesReqId = 0;               // ignores an old answer if a newer one was asked for meanwhile
+let topMode = "qty";              // "qty" = by quantity, "amount" = by money
+let topRows = [];                 // the grouped items of the current range
+
 function setupSalesDate() {
-  const input = $("saleDate");
-  input.max = localDate();
-  input.min = localDate(new Date(Date.now() - KEEP_DAYS * 86400000));
-  input.value = localDate();
-  input.addEventListener("change", loadSalesForDate);
+  const from = $("saleFrom");
+  const to = $("saleTo");
+  const today = localDate();
+  const oldest = localDate(new Date(Date.now() - KEEP_DAYS * 86400000));
+  [from, to].forEach((i) => {
+    i.min = oldest;
+    i.max = today;
+    i.value = today;
+    i.addEventListener("change", () => {
+      if (!from.value || !to.value) return;
+      if (from.value > to.value) {           // "from" after "to": swap them
+        const t = from.value; from.value = to.value; to.value = t;
+      }
+      loadSalesForDate();
+    });
+  });
+
+  // quick buttons: Today / Last 7 / 15 / 30 days
+  document.querySelectorAll("[data-range]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const days = Number(b.dataset.range);
+      from.value = localDate(new Date(Date.now() - (days - 1) * 86400000));
+      if (from.value < oldest) from.value = oldest;
+      to.value = today;
+      loadSalesForDate();
+    });
+  });
+
+  document.querySelectorAll("[data-top]").forEach((b) => {
+    b.addEventListener("click", () => {
+      topMode = b.dataset.top;
+      renderTopChart();
+    });
+  });
+}
+
+async function fetchSalesRange(from, to) {
+  const all = [];
+  for (let start = 0; ; start += SALES_PAGE) {
+    const { data, error } = await supabaseClient
+      .from("sales")
+      .select("*")
+      .gte("sale_date", from)
+      .lte("sale_date", to)
+      .order("created_at", { ascending: false })
+      .range(start, start + SALES_PAGE - 1);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < SALES_PAGE) break;
+  }
+  return all;
 }
 
 async function loadSalesForDate() {
-  const date = $("saleDate").value;
-  if (!date) return;
+  const from = $("saleFrom").value;
+  const to = $("saleTo").value;
+  if (!from || !to) return;
 
-  const { data, error } = await supabaseClient
-    .from("sales")
-    .select("*")
-    .eq("sale_date", date)
-    .order("created_at", { ascending: true });
+  const myReq = ++salesReqId;
+  let data;
+  try {
+    data = await fetchSalesRange(from, to);
+  } catch (error) {
+    return toast(error.message, "error");
+  }
+  if (myReq !== salesReqId) return; // a newer request is already running
 
-  if (error) return toast(error.message, "error");
+  const single = from === to;
+  $("salesDateCol").classList.toggle("hidden", single);
 
   const body = $("salesBody");
   body.innerHTML = "";
@@ -552,23 +609,110 @@ async function loadSalesForDate() {
 
   let total = 0;
   let count = 0;
+  const perDay = {};   // "2026-11-15" -> money
+  const perItem = {};  // item key -> { name, qty, amount }
 
   data.forEach((s) => {
-    total += Number(s.total);
+    const line = Number(s.total);
+    total += line;
     count += s.quantity;
+    perDay[s.sale_date] = (perDay[s.sale_date] || 0) + line;
+
+    // same product = same row (by product id, or by name for custom entries)
+    const key = s.product_id ? "p:" + s.product_id : "n:" + String(s.product_name).trim().toLowerCase();
+    const it = perItem[key] || (perItem[key] = { name: s.product_name, qty: 0, amount: 0 });
+    it.qty += s.quantity;
+    it.amount += line;
 
     const tr = document.createElement("tr");
     const time = new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    [time, s.product_name + (s.description ? " — " + s.description : ""), String(s.quantity), money(s.unit_price), money(s.total)].forEach((t) =>
-      tr.appendChild(el("td", "", t))
-    );
+    const cells = [
+      time,
+      s.product_name + (s.description ? " — " + s.description : ""),
+      String(s.quantity),
+      money(s.unit_price),
+      money(s.total),
+    ];
+    if (!single) cells.unshift(fmtDate(s.sale_date));
+    cells.forEach((t) => tr.appendChild(el("td", "", t)));
     body.appendChild(tr);
   });
 
+  const dayCount = Math.round((new Date(to + "T00:00:00") - new Date(from + "T00:00:00")) / 86400000) + 1;
   $("sTotal").textContent = money(total);
   $("sCount").textContent = count;
+  $("sDays").textContent = Object.keys(perDay).length + " / " + dayCount;
+  $("sAvg").textContent = money(total / dayCount);
+  $("salesRangeLabel").textContent = single ? fmtDate(from) : fmtDate(from) + " to " + fmtDate(to);
+
+  topRows = Object.values(perItem);
+  renderTopChart();
+  renderDayChart(from, dayCount, perDay);
 }
 
+// Horizontal bars: which items sold the most
+function renderTopChart() {
+  document.querySelectorAll("[data-top]").forEach((b) => b.classList.toggle("active", b.dataset.top === topMode));
+
+  const box = $("topChart");
+  box.innerHTML = "";
+  $("topEmpty").classList.toggle("hidden", topRows.length > 0);
+  if (!topRows.length) { $("topNote").textContent = ""; return; }
+
+  const rows = topRows.slice().sort((a, b) => b[topMode] - a[topMode] || b.amount - a.amount).slice(0, TOP_ITEMS);
+  const max = rows[0][topMode] || 1;
+  $("topNote").textContent = topRows.length > TOP_ITEMS
+    ? "Top " + TOP_ITEMS + " of " + topRows.length + " items"
+    : topRows.length + (topRows.length === 1 ? " item" : " items");
+
+  rows.forEach((r, i) => {
+    const row = el("div", "bar-row");
+    row.appendChild(el("span", "bar-rank", String(i + 1)));
+    const mid = el("div", "bar-mid");
+    mid.appendChild(el("div", "bar-name", r.name));
+    const track = el("div", "bar-track");
+    const fill = el("div", "bar-fill" + (i === 0 ? " top" : ""));
+    fill.style.width = Math.max(2, (r[topMode] / max) * 100) + "%";
+    track.appendChild(fill);
+    mid.appendChild(track);
+    row.appendChild(mid);
+    const val = el("div", "bar-val");
+    val.appendChild(el("strong", "", topMode === "qty" ? r.qty + " sold" : money(r.amount)));
+    val.appendChild(el("span", "muted small", topMode === "qty" ? money(r.amount) : r.qty + " sold"));
+    row.appendChild(val);
+    box.appendChild(row);
+  });
+}
+
+// Vertical bars: how much was sold on each day (only when more than one day is selected)
+function renderDayChart(from, dayCount, perDay) {
+  const card = $("dayChartCard");
+  card.classList.toggle("hidden", dayCount < 2);
+  const box = $("dayChart");
+  box.innerHTML = "";
+  if (dayCount < 2) return;
+
+  const days = [];
+  for (let i = 0; i < dayCount; i++) {
+    const d = new Date(from + "T00:00:00");
+    d.setDate(d.getDate() + i);
+    const key = localDate(d);
+    days.push({ key, label: d.getDate() + "/" + (d.getMonth() + 1), amount: perDay[key] || 0 });
+  }
+  const max = Math.max(...days.map((d) => d.amount), 1);
+
+  days.forEach((d) => {
+    const col = el("div", "col");
+    col.title = fmtDate(d.key) + ": " + money(d.amount);
+    const barBox = el("div", "col-bar");
+    const fill = el("div", "col-fill" + (d.amount === 0 ? " zero" : ""));
+    fill.style.height = d.amount === 0 ? "3px" : Math.max(4, (d.amount / max) * 100) + "%";
+    barBox.appendChild(fill);
+    col.appendChild(barBox);
+    col.appendChild(el("span", "col-label", d.label));
+    box.appendChild(col);
+  });
+}
 // ====== THEME + LOGOUT ======
 const root = document.documentElement;
 $("themeToggle").addEventListener("click", () => {

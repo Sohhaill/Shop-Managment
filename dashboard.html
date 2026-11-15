@@ -23,7 +23,14 @@
     <link rel="stylesheet" href="./assets/style.css" />
         <link rel="stylesheet" href="./assets/dashboard.css" />
     <link rel="stylesheet" href="./assets/calculator.css" />
+    <link rel="stylesheet" href="./assets/sales-report.css" />
     <link rel="icon" type="image/png" href="./assets/favicon.jpg" />
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="theme-color" content="#121212" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ShopEase" />
+    <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
   </head>
   <body class="app-body">
     <header class="topbar">
@@ -384,15 +391,30 @@
           </div>
         </section>
 
-        <!-- ===== SALE MANAGEMENT ===== -->
+       <!-- ===== SALE MANAGEMENT ===== -->
         <section id="view-sales" class="view hidden">
           <div class="view-head">
             <h2>Sale management</h2>
-            <div class="date-pick">
-              <label for="saleDate">Date</label>
-              <input type="date" id="saleDate" />
+            <div class="range-pick">
+              <div class="date-pick">
+                <label for="saleFrom">From</label>
+                <input type="date" id="saleFrom" />
+              </div>
+              <div class="date-pick">
+                <label for="saleTo">To</label>
+                <input type="date" id="saleTo" />
+              </div>
             </div>
           </div>
+          <div class="quick-ranges">
+            <button type="button" class="chip" data-range="1">Today</button>
+            <button type="button" class="chip" data-range="7">Last 7 days</button>
+            <button type="button" class="chip" data-range="15">Last 15 days</button>
+            <button type="button" class="chip" data-range="30">Last 30 days</button>
+          </div>
+          <p class="muted small note">
+            Showing: <strong id="salesRangeLabel"></strong>. Only the last 30 days of sales are kept.
+          </p>
           <div class="stats">
             <div class="stat">
               <span class="muted small">Total sale</span
@@ -402,14 +424,41 @@
               <span class="muted small">Items sold</span
               ><strong id="sCount">0</strong>
             </div>
+            <div class="stat">
+              <span class="muted small">Days with sales</span
+              ><strong id="sDays">0</strong>
+            </div>
+            <div class="stat">
+              <span class="muted small">Average per day</span
+              ><strong id="sAvg">0</strong>
+            </div>
           </div>
-          <p class="muted small note">
-            Only the last 30 days of sales are kept.
-          </p>
+
+          <div class="charts-grid">
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3>Most sold items</h3>
+                <div class="chip-group">
+                  <button type="button" class="chip active" data-top="qty">By quantity</button>
+                  <button type="button" class="chip" data-top="amount">By amount</button>
+                </div>
+              </div>
+              <p class="muted small" id="topNote"></p>
+              <div id="topChart"></div>
+              <p id="topEmpty" class="empty hidden">No sales in this range.</p>
+            </div>
+
+            <div class="chart-card" id="dayChartCard">
+              <div class="chart-head"><h3>Sale per day</h3></div>
+              <div class="day-chart" id="dayChart"></div>
+            </div>
+          </div>
+
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
+                  <th id="salesDateCol" class="hidden">Date</th>
                   <th>Time</th>
                   <th>Product</th>
                   <th>Qty</th>
@@ -419,7 +468,7 @@
               </thead>
               <tbody id="salesBody"></tbody>
             </table>
-            <p id="salesEmpty" class="empty hidden">No sales on this date.</p>
+            <p id="salesEmpty" class="empty hidden">No sales in this range.</p>
           </div>
         </section>
 
