@@ -173,11 +173,32 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
 .message.success { color: var(--accent); }
 
 .hidden { display: none; }
+/* ===== Patle scrollbar, rang var(--accent) ===== */
 
+/* Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 6px;   /* upar neeche wala scrollbar */
+  height: 6px;  /* side wala scrollbar (tables mein) */
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 10px;
+}
+
+/* Firefox (Chrome mein yeh chalta hi nahi, is liye alag likha hai) */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) transparent;
+  }
+}
 @media(max-width:768px){
   .brand img {
-    width: 50px !important;
-    height: 50px !important;
+           width: 70px !important;
+        height: 70px !important;
 }
 h2.p_name {
     font-size: 26px !important;
@@ -187,5 +208,21 @@ h2.p_name {
 }
 div#balanceBar {
     display: grid;
+}
+.topbar-right {
+    position: fixed;
+    bottom: 0;
+        background: var(--card);
+            border: 1px solid var(--border);
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    left: 0;
+    padding: 11px 16px;
+    z-index: 100;
+}
+button#themeToggle {
+    margin-left: auto;
 }
 }
