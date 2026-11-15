@@ -9,7 +9,10 @@ const CURRENCY = "Rs";            // shown before every amount
 const LOW_STOCK = 5;              // quantity at or below this shows a low-stock warning
 const KEEP_DAYS = 30;             // how far back the date picker goes (SQL cleanup also uses 30)
 const IMAGE_BUCKET = "product-images";
-const MAX_IMAGE_SIDE = 700;       // product images are shrunk to this size before upload
+const MAX_IMAGE_SIDE = 400;       // product images are shrunk to this size (they show ~165px wide, 400 is sharp even on phones)
+const IMAGE_QUALITY = 0.7;        // 0 to 1: lower = smaller file (0.7 still looks good for product photos)
+const LOGO_MAX_SIDE = 300;        // the shop logo is shown small, 300px is enough for the screen and the PDF
+const IMAGE_CACHE = "31536000";   // seconds. File names never repeat, so browsers may keep images for a year (less download)
 const SHOP_NAME = "My Shop";       // used on the bill only if no shop name is saved in Shop Info
 const SHOP_ADDRESS = "";          // optional line under the shop name on the bill
 const SHOP_PHONE = "";            // optional phone number on the bill
@@ -396,29 +399,50 @@ $("pmFile").addEventListener("change", () => {
   prev.appendChild(img);
 });
 
-// Shrink the picture before upload to save storage
-function compressImage(file) {
+// ---- Image compression (runs in the browser, before the upload) ----
+function loadImageFile(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#fff"; // white background for transparent PNGs
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process image"))), "image/jpeg", 0.8);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Invalid image file"));
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Invalid image file")); };
     img.src = url;
   });
+}
+
+// The picture drawn on a canvas, shrunk so its longest side is at most maxSide (never enlarged)
+function scaledCanvas(img, maxSide, whiteBackground) {
+  const iw = img.naturalWidth || 300;   // an SVG without a size reports 0
+  const ih = img.naturalHeight || 300;
+  const scale = Math.min(1, maxSide / Math.max(iw, ih));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(iw * scale));
+  canvas.height = Math.max(1, Math.round(ih * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (whiteBackground) {
+    ctx.fillStyle = "#fff"; // transparent parts would turn black in a JPEG
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function canvasBlob(canvas, type, quality) {
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), type, quality));
+}
+
+// Product picture -> small WebP (about 30% smaller than JPEG). A browser that cannot
+// make WebP quietly returns a PNG, so in that case we make a JPEG instead.
+// Returns { blob, ext }.
+async function compressImage(file) {
+  const img = await loadImageFile(file);
+  const canvas = scaledCanvas(img, MAX_IMAGE_SIDE, true);
+  let blob = await canvasBlob(canvas, "image/webp", IMAGE_QUALITY);
+  if (!blob || blob.type !== "image/webp") blob = await canvasBlob(canvas, "image/jpeg", IMAGE_QUALITY);
+  if (!blob) throw new Error("Could not process image");
+  return { blob, ext: blob.type === "image/webp" ? "webp" : "jpg" };
 }
 
 $("productForm").addEventListener("submit", async (e) => {
@@ -447,11 +471,11 @@ $("productForm").addEventListener("submit", async (e) => {
   try {
     // 1. Upload new image (if chosen)
     if (file) {
-      const blob = await compressImage(file);
-      uploadedPath = currentUser.id + "/" + Date.now() + ".jpg";
+      const { blob, ext } = await compressImage(file);
+      uploadedPath = currentUser.id + "/" + Date.now() + "." + ext;
       const { error: upErr } = await supabaseClient.storage
         .from(IMAGE_BUCKET)
-        .upload(uploadedPath, blob, { contentType: "image/jpeg" });
+        .upload(uploadedPath, blob, { contentType: blob.type, cacheControl: IMAGE_CACHE });
       if (upErr) throw upErr;
       imagePath = uploadedPath;
     }
@@ -1919,26 +1943,25 @@ $("shopLogoRemove").addEventListener("click", () => {
   showLogoPreview(null);
 });
 
-// Logo is shrunk to 400px but kept as PNG so a transparent background stays transparent
-function compressLogo(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, 400 / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process the logo"))), "image/png");
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Invalid image file"));
-    };
-    img.src = url;
-  });
+// Logo -> at most 300px. A logo with a transparent background stays a PNG (transparency
+// must survive). A logo without one is saved as whichever of PNG / JPEG is smaller.
+// Returns { blob, ext }.
+async function compressLogo(file) {
+  const img = await loadImageFile(file);
+  const canvas = scaledCanvas(img, LOGO_MAX_SIDE, false);
+  const png = await canvasBlob(canvas, "image/png");
+  if (!png) throw new Error("Could not process the logo");
+
+  const px = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  let transparent = false;
+  for (let i = 3; i < px.length; i += 4) {
+    if (px[i] < 250) { transparent = true; break; }
+  }
+  if (transparent) return { blob: png, ext: "png" };
+
+  const jpg = await canvasBlob(scaledCanvas(img, LOGO_MAX_SIDE, true), "image/jpeg", 0.9);
+  if (jpg && jpg.size < png.size) return { blob: jpg, ext: "jpg" };
+  return { blob: png, ext: "png" };
 }
 
 $("shopForm").addEventListener("submit", async (e) => {
@@ -1968,11 +1991,11 @@ $("shopForm").addEventListener("submit", async (e) => {
 
   try {
     if (pendingLogoFile) {
-      const blob = await compressLogo(pendingLogoFile);
-      uploadedPath = currentUser.id + "/shop-logo-" + Date.now() + ".png";
+      const { blob, ext } = await compressLogo(pendingLogoFile);
+      uploadedPath = currentUser.id + "/shop-logo-" + Date.now() + "." + ext;
       const { error: upErr } = await supabaseClient.storage
         .from(IMAGE_BUCKET)
-        .upload(uploadedPath, blob, { contentType: "image/png" });
+        .upload(uploadedPath, blob, { contentType: blob.type, cacheControl: IMAGE_CACHE });
       if (upErr) throw upErr;
       logoPath = uploadedPath;
     }
