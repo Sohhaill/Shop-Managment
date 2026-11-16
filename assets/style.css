@@ -196,6 +196,9 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
   }
 }
 @media(max-width:768px){
+  main.content {
+    margin-bottom: 70px;
+}
   .data-table {
   width: max-content !important;
 }
