@@ -162,6 +162,13 @@ $("searchBox").addEventListener("input", renderGrid);
 
 // Manage Products: table
 function renderProductsTable() {
+  // totals above the table (stock value = price x quantity of every product)
+  const units = products.reduce((s, p) => s + Math.max(0, Number(p.quantity) || 0), 0);
+  const value = products.reduce((s, p) => s + Number(p.price) * Math.max(0, Number(p.quantity) || 0), 0);
+  $("pStockValue").textContent = money(value);
+  $("pCount").textContent = products.length;
+  $("pUnits").textContent = units.toLocaleString("en-US");
+
   const body = $("productsBody");
   body.innerHTML = "";
   $("productsEmpty").classList.toggle("hidden", products.length > 0);
