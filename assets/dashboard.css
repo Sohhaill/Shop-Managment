@@ -1229,3 +1229,103 @@ textarea:focus {
   .cat-add { flex-direction: column; }
   .cat-add button { width: 100%; }
 }
+
+
+/* ===== Notes ===== */
+/* note background colors: soft colors with dark text, readable in dark and bright theme */
+.c-default { background: var(--card); color: var(--text); }
+.c-yellow  { background: #fff3a3; color: #1a1a1a; }
+.c-green   { background: #c9f2d6; color: #1a1a1a; }
+.c-blue    { background: #cfe6ff; color: #1a1a1a; }
+.c-pink    { background: #ffd3e2; color: #1a1a1a; }
+.c-purple  { background: #e3d4ff; color: #1a1a1a; }
+.c-orange  { background: #ffddb8; color: #1a1a1a; }
+.c-gray    { background: #e4e4e4; color: #1a1a1a; }
+
+.note-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.note-fields .span-2 { grid-column: 1 / -1; }
+.note-fields textarea { width: 100%; resize: vertical; }
+.check-line { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.check-line input { width: auto; }
+
+.note-colors { display: flex; flex-wrap: wrap; gap: 10px; }
+.note-swatch {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.note-swatch.c-default { background: var(--bg); }
+.note-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.note-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-family: inherit;
+  text-align: left;
+}
+.note-card.overdue { border: 2px solid var(--error); }
+.note-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.note-title { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.note-body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-foot { display: flex; flex-direction: column; gap: 2px; font-size: 12px; opacity: .85; }
+.note-when { font-weight: 600; }
+.note-when.overdue { color: #b3261e; }
+.note-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* buttons inside a colored card keep dark text so they stay readable in the dark theme */
+.note-card.c-yellow .act-btn, .note-card.c-green .act-btn, .note-card.c-blue .act-btn,
+.note-card.c-pink .act-btn, .note-card.c-purple .act-btn, .note-card.c-orange .act-btn,
+.note-card.c-gray .act-btn { color: #1a1a1a; border-color: rgba(0, 0, 0, .3); background: rgba(255, 255, 255, .55); }
+.note-card .act-btn.danger { color: #b3261e; }
+
+/* Notes on the Home page */
+.home-notes {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.hn-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: 8px 4px 10px;
+}
+.note-card.home {
+  flex: 0 0 210px;
+  max-width: 210px;
+  padding: 10px 12px;
+  gap: 4px;
+  cursor: pointer;
+}
+.note-card.home .note-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+}
+.note-card.home .note-created { display: none; }
+
+@media (max-width: 768px) {
+  .note-fields { grid-template-columns: 1fr; }
+  .note-grid { grid-template-columns: 1fr; }
+}

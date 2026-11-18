@@ -111,6 +111,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "shopinfo") fillShopForm();
     if (btn.dataset.view === "tasks") loadTasks();
     if (btn.dataset.view === "suppliers") loadSuppliers();
+    if (btn.dataset.view === "notes") loadNotes();
     if (btn.dataset.view === "categories") { catDetailId = null; loadCategories(); }
   });
 });
@@ -779,6 +780,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   await loadTodaySales();
   await loadBalances();
   loadTasks(true); // task badge + Home reminders (quiet: no error popup at start)
+  loadNotes(true); // Notes on the Home page
 })();
 // ====== MESSAGES FOR PIN / KHATA DATABASE ANSWERS ======
 function statusMessage(status) {
@@ -3108,3 +3110,206 @@ $("pmCatSearch").addEventListener("keydown", (e) => {
   const first = $("pmCatOptions").querySelector(".cat-opt");
   if (first) first.click();
 });
+
+// ====== NOTES ======
+// Each note: optional title, text, background color, pinned yes/no, optional date & time.
+// Pinned / newest notes also show on the Home page.
+const NOTE_COLORS = ["default", "yellow", "green", "blue", "pink", "purple", "orange", "gray"];
+const HOME_NOTES_MAX = 8;
+let notes = [];
+let notesReady = false;      // true once notes.sql has been run
+let noteEditId = null;       // note being edited (null = adding a new one)
+let noteColor = "default";
+
+async function loadNotes(quiet) {
+  const { data, error } = await supabaseClient.from("notes").select("*");
+  if (error) {
+    notesReady = false;
+    notes = [];
+    console.error("Notes could not be loaded:", error.message);
+    if (!quiet) formMsg("ntMsg", "Could not load notes: " + error.message + " (Did you run notes.sql in Supabase?)");
+  } else {
+    notesReady = true;
+    notes = data;
+    formMsg("ntMsg", "");
+  }
+  if (noteEditId && !notes.some((n) => n.id === noteEditId)) resetNoteForm();
+  renderNotes();
+  renderHomeNotes();
+}
+
+// pinned first, then newest
+function sortedNotes() {
+  return [...notes].sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.created_at) - new Date(a.created_at)
+  );
+}
+
+function noteWhen(n) {
+  if (!n.remind_at) return null;
+  const d = new Date(n.remind_at);
+  const text = d.toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return { text, overdue: d.getTime() < Date.now() };
+}
+
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function makeNoteCard(n, forHome) {
+  const card = el(forHome ? "button" : "div", "note-card c-" + n.color + (forHome ? " home" : ""));
+  if (forHome) card.type = "button";
+  const when = noteWhen(n);
+  if (when && when.overdue) card.classList.add("overdue");
+
+  if (n.title || n.pinned) {
+    const head = el("div", "note-head");
+    head.appendChild(el("span", "note-title", n.title || ""));
+    if (n.pinned) head.appendChild(el("span", "note-pin", "📌"));
+    card.appendChild(head);
+  }
+  card.appendChild(el("p", "note-body", n.body));
+
+  const foot = el("div", "note-foot");
+  if (when) foot.appendChild(el("span", "note-when" + (when.overdue ? " overdue" : ""), "⏰ " + when.text));
+  foot.appendChild(el("span", "note-created", "Added " + fmtDateTime(n.created_at)));
+  card.appendChild(foot);
+  return card;
+}
+
+function renderNotes() {
+  const q = $("noteSearch").value.trim().toLowerCase();
+  const list = sortedNotes().filter((n) => ((n.title || "") + " " + n.body).toLowerCase().includes(q));
+  $("noteSummary").textContent = notes.length + (notes.length === 1 ? " note" : " notes");
+  $("noteEmpty").classList.toggle("hidden", list.length > 0);
+  $("noteEmpty").textContent = notes.length
+    ? "No note found."
+    : notesReady ? "No notes yet. Write your first note above." : "Notes are not set up yet. Run notes.sql in Supabase.";
+
+  const grid = $("noteGrid");
+  grid.innerHTML = "";
+  list.forEach((n) => {
+    const card = makeNoteCard(n, false);
+    const act = el("div", "note-actions");
+    const pin = el("button", "act-btn", n.pinned ? "Unpin" : "Pin");
+    pin.type = "button";
+    pin.addEventListener("click", () => toggleNotePin(n));
+    const edit = el("button", "act-btn", "Edit");
+    edit.type = "button";
+    edit.addEventListener("click", () => startEditNote(n.id));
+    const del = el("button", "act-btn danger", "Delete");
+    del.type = "button";
+    del.addEventListener("click", () => deleteNote(n));
+    act.appendChild(pin);
+    act.appendChild(edit);
+    act.appendChild(del);
+    card.appendChild(act);
+    grid.appendChild(card);
+  });
+}
+$("noteSearch").addEventListener("input", renderNotes);
+
+function renderHomeNotes() {
+  const list = sortedNotes().slice(0, HOME_NOTES_MAX);
+  $("homeNotes").classList.toggle("hidden", list.length === 0);
+  const wrap = $("homeNotesList");
+  wrap.innerHTML = "";
+  list.forEach((n) => {
+    const card = makeNoteCard(n, true);
+    card.addEventListener("click", () => {
+      document.querySelector('.nav-item[data-view="notes"]').click();
+      startEditNote(n.id);
+    });
+    wrap.appendChild(card);
+  });
+}
+
+// ---- color picker in the form ----
+function renderNoteColors() {
+  const box = $("ntColors");
+  box.innerHTML = "";
+  NOTE_COLORS.forEach((c) => {
+    const b = el("button", "note-swatch c-" + c + (c === noteColor ? " active" : ""));
+    b.type = "button";
+    b.title = c === "default" ? "No color" : c;
+    b.setAttribute("aria-label", b.title);
+    b.addEventListener("click", () => { noteColor = c; renderNoteColors(); });
+    box.appendChild(b);
+  });
+}
+renderNoteColors();
+
+function resetNoteForm() {
+  noteEditId = null;
+  noteColor = "default";
+  $("noteForm").reset();
+  $("noteFormTitle").textContent = "Add new note";
+  $("ntSubmit").textContent = "Add note";
+  $("ntCancel").classList.add("hidden");
+  renderNoteColors();
+}
+$("ntCancel").addEventListener("click", () => { resetNoteForm(); formMsg("ntMsg", ""); });
+
+function startEditNote(id) {
+  const n = notes.find((x) => x.id === id);
+  if (!n) return;
+  noteEditId = id;
+  noteColor = NOTE_COLORS.includes(n.color) ? n.color : "default";
+  $("ntTitle").value = n.title || "";
+  $("ntBody").value = n.body;
+  $("ntRemind").value = n.remind_at ? toLocalInput(n.remind_at) : "";
+  $("ntPin").checked = !!n.pinned;
+  $("noteFormTitle").textContent = "Edit note";
+  $("ntSubmit").textContent = "Save changes";
+  $("ntCancel").classList.remove("hidden");
+  formMsg("ntMsg", "");
+  renderNoteColors();
+  $("noteForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("ntBody").focus();
+}
+
+$("noteForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("ntMsg", "");
+  const body = $("ntBody").value.trim();
+  if (!body) return formMsg("ntMsg", "Please write the note.");
+  if (!notesReady) return formMsg("ntMsg", "Notes are not set up yet. Run notes.sql in Supabase.");
+
+  const remind = $("ntRemind").value;
+  const payload = {
+    title: $("ntTitle").value.trim() || null,
+    body,
+    color: noteColor,
+    pinned: $("ntPin").checked,
+    remind_at: remind ? new Date(remind).toISOString() : null,
+  };
+
+  $("ntSubmit").disabled = true;
+  const q = noteEditId
+    ? supabaseClient.from("notes").update(payload).eq("id", noteEditId)
+    : supabaseClient.from("notes").insert(payload);
+  const { error } = await q;
+  $("ntSubmit").disabled = false;
+  if (error) return formMsg("ntMsg", error.message);
+
+  const wasEdit = !!noteEditId;
+  resetNoteForm();
+  await loadNotes(true);
+  toast(wasEdit ? "Note updated" : "Note added");
+});
+
+async function toggleNotePin(n) {
+  const { error } = await supabaseClient.from("notes").update({ pinned: !n.pinned }).eq("id", n.id);
+  if (error) return toast(error.message, "error");
+  await loadNotes(true);
+}
+
+async function deleteNote(n) {
+  if (!confirm("Delete this note?" + (n.title ? '\n\n"' + n.title + '"' : ""))) return;
+  const { error } = await supabaseClient.from("notes").delete().eq("id", n.id);
+  if (error) return toast(error.message, "error");
+  if (noteEditId === n.id) resetNoteForm();
+  await loadNotes(true);
+  toast("Note deleted");
+}

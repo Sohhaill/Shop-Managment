@@ -146,6 +146,7 @@
         <button type="button" class="nav-item" data-view="tasks">
           Task Reminder <span class="nav-badge hidden" id="taskBadge">0</span>
         </button>
+        <button type="button" class="nav-item" data-view="notes">Notes</button>
         <button type="button" class="nav-item" data-view="suppliers">Suppliers</button>
         <button type="button" class="nav-item" data-view="shopinfo">
           Shop Info
@@ -188,6 +189,12 @@
           <div class="home-tasks hidden" id="homeTasks">
             <span class="ht-label">Tasks</span>
             <div class="ht-list" id="homeTasksList"></div>
+          </div>
+
+          <!-- Notes: pinned first, then newest (click one to open it in the Notes tab) -->
+          <div class="home-notes hidden" id="homeNotes">
+            <span class="ht-label">Notes</span>
+            <div class="hn-list" id="homeNotesList"></div>
           </div>
 
           <div class="home-grid">
@@ -684,6 +691,51 @@
 
           <ul class="task-list" id="taskList"></ul>
           <p id="taskEmpty" class="empty hidden"></p>
+        </section>
+
+        <!-- ===== NOTES ===== -->
+        <section id="view-notes" class="view hidden">
+          <div class="view-head">
+            <h2>Notes</h2>
+            <span class="muted small" id="noteSummary"></span>
+          </div>
+
+          <form id="noteForm" class="card-form" novalidate>
+            <h3 id="noteFormTitle">Add new note</h3>
+            <div class="note-fields">
+              <div>
+                <label for="ntTitle">Title (optional)</label>
+                <input type="text" id="ntTitle" maxlength="80" placeholder="e.g. Supplier call" autocomplete="off" />
+              </div>
+              <div>
+                <label for="ntRemind">Date &amp; time (optional)</label>
+                <input type="datetime-local" id="ntRemind" />
+              </div>
+              <div class="span-2">
+                <label for="ntBody">Note *</label>
+                <textarea id="ntBody" rows="4" maxlength="2000" placeholder="Write your note here..."></textarea>
+              </div>
+              <div class="span-2">
+                <label>Color</label>
+                <div class="note-colors" id="ntColors"></div>
+              </div>
+              <div class="span-2">
+                <label class="check-line"><input type="checkbox" id="ntPin" /> Pin this note (keeps it first)</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" id="ntSubmit" style="width: fit-content">Add note</button>
+              <button type="button" id="ntCancel" class="act-btn hidden">Cancel edit</button>
+              <div id="ntMsg" class="message" role="alert"></div>
+            </div>
+          </form>
+
+          <div class="list-head">
+            <h3>All notes</h3>
+            <input type="search" id="noteSearch" placeholder="Search notes..." autocomplete="off" />
+          </div>
+          <div class="note-grid" id="noteGrid"></div>
+          <p id="noteEmpty" class="empty hidden"></p>
         </section>
 
         <!-- ===== CATEGORIES ===== -->
