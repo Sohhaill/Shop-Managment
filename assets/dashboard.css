@@ -1092,7 +1092,7 @@ textarea:focus {
   overflow-x: auto;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
-  scrollbar-width: thin;
+ 
 }
 .cat-chips.mg { padding: 0 0 10px; border-bottom: none; margin-bottom: 4px; }
 .cat-chip {
