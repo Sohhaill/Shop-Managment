@@ -7,7 +7,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // ====== SETTINGS (easy to change) ======
 const CURRENCY = "Rs";            // shown before every amount
 const LOW_STOCK = 1;              // quantity at or below this shows a low-stock warning
-const KEEP_DAYS = 30;             // how far back the date picker goes (SQL cleanup also uses 30)
+const KEEP_DAYS = 90;             // how far back the date picker goes (SQL cleanup also uses 90)
 const IMAGE_BUCKET = "product-images";
 const MAX_IMAGE_SIDE = 400;       // product images are shrunk to this size (they show ~165px wide, 400 is sharp even on phones)
 const IMAGE_QUALITY = 0.7;        // 0 to 1: lower = smaller file (0.7 still looks good for product photos)
@@ -571,7 +571,7 @@ function setupSalesDate() {
     });
   });
 
-  // quick buttons: Today / Last 7 / 15 / 30 days
+  // quick buttons: Today / Last 7 / 15 / 30 / 60 / 90 days
   document.querySelectorAll("[data-range]").forEach((b) => {
     b.addEventListener("click", () => {
       const days = Number(b.dataset.range);
@@ -772,7 +772,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   $("userName").textContent = profile.full_name || user.email;
 
   loadShopInfo(); // shop logo / name for Home and the PDF bill (doesn't block the rest)
-  await supabaseClient.rpc("cleanup_old_sales"); // delete sales older than 30 days
+  await supabaseClient.rpc("cleanup_old_sales"); // delete sales older than 90 days (see sales_retention_90.sql)
   setupSalesDate();
   await loadCategories(true);
   await loadProducts();
