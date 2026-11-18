@@ -129,6 +129,7 @@
         <button type="button" class="nav-item" data-view="products">
           Manage Products
         </button>
+        <button type="button" class="nav-item" data-view="categories">Categories</button>
         <button type="button" class="nav-item" data-view="khata">Khata</button>
          <button type="button" class="nav-item" data-view="balance">
           Balance
@@ -272,10 +273,11 @@
                 <input
                   type="search"
                   id="searchBox"
-                  placeholder="Search product..."
+                  placeholder="Search product or category..."
                   autocomplete="off"
                 />
               </div>
+              <div class="cat-chips hidden" id="homeCats"></div>
               <div id="productGrid" class="product-grid"></div>
               <p id="gridEmpty" class="empty hidden">No products found.</p>
             </section>
@@ -341,10 +343,11 @@
                 <input
                   type="search"
                   id="billSearch"
-                  placeholder="Search product..."
+                  placeholder="Search product or category..."
                   autocomplete="off"
                 />
               </div>
+              <div class="cat-chips hidden" id="billCats"></div>
               <div id="billGrid" class="product-grid"></div>
               <p id="billGridEmpty" class="empty hidden">No products found.</p>
             </section>
@@ -374,12 +377,23 @@
               + Add new product
             </button>
           </div>
+          <div class="list-head">
+            <h3>All products</h3>
+            <input
+              type="search"
+              id="mgSearch"
+              placeholder="Search name, category, description..."
+              autocomplete="off"
+            />
+          </div>
+          <div class="cat-chips mg hidden" id="mgCats"></div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Image</th>
                   <th>Name</th>
+                  <th>Category</th>
                   <th>Price</th>
                   <th>Quantity</th>
                   <th>Description</th>
@@ -668,6 +682,80 @@
 
           <ul class="task-list" id="taskList"></ul>
           <p id="taskEmpty" class="empty hidden"></p>
+        </section>
+
+        <!-- ===== CATEGORIES ===== -->
+        <section id="view-categories" class="view hidden">
+          <!-- list of all categories -->
+          <div id="catListMode">
+            <div class="view-head">
+              <h2>Categories</h2>
+              <span class="muted small" id="catCount"></span>
+            </div>
+            <form id="catForm" class="cat-add" novalidate>
+              <input
+                type="text"
+                id="catName"
+                maxlength="60"
+                placeholder="New category name (e.g. Cold drinks)"
+                autocomplete="off"
+              />
+              <button type="submit" id="catAddBtn">Add category</button>
+            </form>
+            <div id="catMsg" class="message" role="alert"></div>
+
+            <div class="list-head">
+              <h3>All categories</h3>
+              <input
+                type="search"
+                id="catSearch"
+                placeholder="Search category..."
+                autocomplete="off"
+              />
+            </div>
+            <div id="catGrid" class="cat-grid"></div>
+            <p id="catEmpty" class="empty hidden"></p>
+          </div>
+
+          <!-- one category opened: its products -->
+          <div id="catDetailMode" class="hidden">
+            <div class="view-head">
+              <div class="cat-detail-title">
+                <button type="button" id="catBack" class="act-btn">&larr; All categories</button>
+                <h2 id="catDetailName"></h2>
+                <span class="muted small" id="catDetailCount"></span>
+              </div>
+              <div class="cat-detail-actions">
+                <button type="button" id="catAddProductsBtn" class="primary-btn">+ Add products</button>
+                <button type="button" id="catRenameBtn" class="act-btn">Rename</button>
+                <button type="button" id="catDeleteBtn" class="act-btn danger">Delete</button>
+              </div>
+            </div>
+            <div class="list-head">
+              <h3>Products in this category</h3>
+              <input
+                type="search"
+                id="catProdSearch"
+                placeholder="Search in this category..."
+                autocomplete="off"
+              />
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Image</th>
+                    <th>Name</th>
+                    <th>Price</th>
+                    <th>Quantity</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="catProdBody"></tbody>
+              </table>
+              <p id="catProdEmpty" class="empty hidden"></p>
+            </div>
+          </div>
         </section>
 
         <!-- ===== SUPPLIERS ===== -->
@@ -987,6 +1075,27 @@
     </div>
 
     <!-- ===== ADD / EDIT PRODUCT POPUP ===== -->
+    <div class="modal hidden" id="catPickModal">
+      <div class="modal-box wide">
+        <button type="button" class="modal-close" data-close aria-label="Close">
+          &times;
+        </button>
+        <h3 id="cpTitle">Add products to category</h3>
+        <input
+          type="search"
+          id="cpSearch"
+          placeholder="Search products..."
+          autocomplete="off"
+        />
+        <div id="cpList" class="cp-list"></div>
+        <div id="cpMsg" class="message" role="alert"></div>
+        <div class="cp-actions">
+          <span id="cpSelCount" class="muted small">0 selected</span>
+          <button type="button" id="cpSave">Add selected</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal hidden" id="productModal">
       <div class="modal-box">
         <button type="button" class="modal-close" data-close aria-label="Close">
@@ -1034,6 +1143,20 @@
             rows="3"
             placeholder="Short details about the product"
           ></textarea>
+
+          <div id="pmCatField">
+            <label for="pmCatSearch">Category (optional)</label>
+            <div class="cat-picker">
+              <div id="pmCatSelected" class="cat-selected"></div>
+              <input
+                type="search"
+                id="pmCatSearch"
+                placeholder="Search category or type a new one..."
+                autocomplete="off"
+              />
+              <div id="pmCatOptions" class="cat-options"></div>
+            </div>
+          </div>
 
           <div id="productFormMsg" class="message" role="alert"></div>
           <button type="submit" id="pmSubmit">Save product</button>

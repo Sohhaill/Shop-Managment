@@ -6,7 +6,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 // ====== SETTINGS (easy to change) ======
 const CURRENCY = "Rs";            // shown before every amount
-const LOW_STOCK = 5;              // quantity at or below this shows a low-stock warning
+const LOW_STOCK = 1;              // quantity at or below this shows a low-stock warning
 const KEEP_DAYS = 30;             // how far back the date picker goes (SQL cleanup also uses 30)
 const IMAGE_BUCKET = "product-images";
 const MAX_IMAGE_SIDE = 400;       // product images are shrunk to this size (they show ~165px wide, 400 is sharp even on phones)
@@ -111,6 +111,7 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "shopinfo") fillShopForm();
     if (btn.dataset.view === "tasks") loadTasks();
     if (btn.dataset.view === "suppliers") loadSuppliers();
+    if (btn.dataset.view === "categories") { catDetailId = null; loadCategories(); }
   });
 });
 
@@ -123,12 +124,13 @@ async function loadProducts() {
   renderBillGrid();
   renderProductsTable();
   renderLowStock();
+  renderCategoryViews();
 }
 
 // Home: product cards with search
 function renderGrid() {
-  const q = $("searchBox").value.trim().toLowerCase();
-  const list = products.filter((p) => p.name.toLowerCase().includes(q));
+  renderCatChips($("homeCats"), homeCat, (k) => { homeCat = k; renderGrid(); });
+  const list = filterProducts(products, $("searchBox").value, homeCat, false);
   const grid = $("productGrid");
   grid.innerHTML = "";
 
@@ -159,6 +161,7 @@ function productCard(p, onAdd, label = "Add") {
   return card;
 }
 $("searchBox").addEventListener("input", renderGrid);
+$("mgSearch").addEventListener("input", renderProductsTable);
 
 // Manage Products: table
 function renderProductsTable() {
@@ -169,11 +172,15 @@ function renderProductsTable() {
   $("pCount").textContent = products.length;
   $("pUnits").textContent = units.toLocaleString("en-US");
 
+  renderCatChips($("mgCats"), mgCat, (k) => { mgCat = k; renderProductsTable(); });
+  const list = filterProducts(products, $("mgSearch").value, mgCat, true);
+
   const body = $("productsBody");
   body.innerHTML = "";
-  $("productsEmpty").classList.toggle("hidden", products.length > 0);
+  $("productsEmpty").classList.toggle("hidden", list.length > 0);
+  $("productsEmpty").textContent = products.length ? "No products found." : 'No products yet. Click "Add new product".';
 
-  products.forEach((p) => {
+  list.forEach((p) => {
     const tr = document.createElement("tr");
 
     const tdImg = document.createElement("td");
@@ -182,6 +189,7 @@ function renderProductsTable() {
 
     const cells = [
       [p.name, ""],
+      [categoryName(p.category_id) || "-", ""],
       [money(p.price), ""],
       [String(p.quantity), p.quantity <= 0 ? "out" : p.quantity <= LOW_STOCK ? "low" : ""],
       [p.description || "-", "desc"],
@@ -393,6 +401,9 @@ function openProductModal(p) {
   $("pmDesc").value = p && p.description ? p.description : "";
   $("pmFile").value = "";
   showPreview(p);
+  pmCategoryId = p && p.category_id ? p.category_id : null;
+  $("pmCatSearch").value = "";
+  renderPmCategory();
   formMsg("productFormMsg", "");
   openModal("productModal");
   $("pmName").focus();
@@ -491,6 +502,7 @@ $("productForm").addEventListener("submit", async (e) => {
 
     // 2. Save product row
     const payload = { name, price, quantity: qty, description: desc || null, image_path: imagePath };
+    if (categoriesReady) payload.category_id = pmCategoryId; // only once categories.sql has been run
     const { error } = editingProduct
       ? await supabaseClient.from("products").update(payload).eq("id", editingProduct.id)
       : await supabaseClient.from("products").insert(payload);
@@ -762,6 +774,7 @@ supabaseClient.auth.onAuthStateChange((event) => {
   loadShopInfo(); // shop logo / name for Home and the PDF bill (doesn't block the rest)
   await supabaseClient.rpc("cleanup_old_sales"); // delete sales older than 30 days
   setupSalesDate();
+  await loadCategories(true);
   await loadProducts();
   await loadTodaySales();
   await loadBalances();
@@ -1669,8 +1682,8 @@ function renderBill() {
 
 // Right side: products
 function renderBillGrid() {
-  const q = $("billSearch").value.trim().toLowerCase();
-  const list = products.filter((p) => p.name.toLowerCase().includes(q));
+  renderCatChips($("billCats"), billCat, (k) => { billCat = k; renderBillGrid(); });
+  const list = filterProducts(products, $("billSearch").value, billCat, false);
   const grid = $("billGrid");
   grid.innerHTML = "";
 
@@ -2754,3 +2767,344 @@ async function deleteSupplier(s) {
   await loadSuppliers();
   toast("Supplier deleted");
 }
+
+
+// ====== CATEGORIES ======
+// A product belongs to ONE category (products.category_id). Categories show as filter buttons on
+// Home, Generate Bill and Manage Products, and have their own tab to add products into them.
+let categories = [];
+let categoriesReady = false;           // true once the categories table exists (categories.sql was run)
+let homeCat = "all";                   // selected button: "all", "none" (no category) or a category id
+let billCat = "all";
+let mgCat = "all";
+let catDetailId = null;                // the category opened in the Categories tab
+let pmCategoryId = null;               // category picked in the product popup
+let cpSelected = new Set();            // products ticked in the "Add products" popup
+
+function categoryName(id) {
+  const c = categories.find((x) => x.id === id);
+  return c ? c.name : "";
+}
+function productsInCategory(id) {
+  return products.filter((p) => p.category_id === id);
+}
+
+async function loadCategories(quiet) {
+  const { data, error } = await supabaseClient.from("categories").select("*").order("name");
+  if (error) {
+    categoriesReady = false;
+    categories = [];
+    console.error("Categories could not be loaded:", error.message);
+    if (!quiet) formMsg("catMsg", "Categories are not set up yet. Run categories.sql in Supabase. (" + error.message + ")");
+  } else {
+    categoriesReady = true;
+    categories = data;
+    formMsg("catMsg", "");
+  }
+  // a selected button whose category no longer exists goes back to "All"
+  const exists = (k) => k === "all" || k === "none" || categories.some((c) => c.id === k);
+  if (!exists(homeCat)) homeCat = "all";
+  if (!exists(billCat)) billCat = "all";
+  if (!exists(mgCat)) mgCat = "all";
+
+  renderGrid();
+  renderBillGrid();
+  renderProductsTable();
+  renderCategoryViews();
+}
+
+// Products matching the search words (name, category name, and description in Manage Products) + the selected button
+function filterProducts(list, query, sel, withDesc) {
+  const q = query.trim().toLowerCase();
+  return list.filter((p) => {
+    if (sel === "none") {
+      if (p.category_id) return false;
+    } else if (sel !== "all" && p.category_id !== sel) return false;
+    if (!q) return true;
+    return [p.name, categoryName(p.category_id), withDesc ? p.description : ""].join(" ").toLowerCase().includes(q);
+  });
+}
+
+// The row of category buttons (All, Drinks, Snacks, ... and "No category")
+function renderCatChips(box, current, onPick) {
+  box.innerHTML = "";
+  box.classList.toggle("hidden", categories.length === 0);
+  if (!categories.length) return;
+
+  const add = (label, key, count) => {
+    const b = el("button", "cat-chip" + (current === key ? " active" : ""));
+    b.type = "button";
+    b.appendChild(el("span", "cat-chip-name", label));
+    b.appendChild(el("span", "cat-count", String(count)));
+    b.addEventListener("click", () => onPick(key));
+    box.appendChild(b);
+  };
+  add("All", "all", products.length);
+  categories.forEach((c) => add(c.name, c.id, productsInCategory(c.id).length));
+  const loose = products.filter((p) => !p.category_id).length;
+  if (loose) add("No category", "none", loose);
+}
+
+// ---- Categories tab: list ----
+function renderCategoryViews() {
+  renderCategoryList();
+  renderCategoryDetail();
+}
+
+function renderCategoryList() {
+  const q = $("catSearch").value.trim().toLowerCase();
+  const list = categories.filter((c) => c.name.toLowerCase().includes(q));
+  $("catCount").textContent = categories.length + (categories.length === 1 ? " category" : " categories");
+  $("catEmpty").classList.toggle("hidden", list.length > 0);
+  $("catEmpty").textContent = categories.length ? "No category found." : "No categories yet. Add your first category above.";
+
+  const grid = $("catGrid");
+  grid.innerHTML = "";
+  list.forEach((c) => {
+    const n = productsInCategory(c.id).length;
+    const card = el("button", "cat-card");
+    card.type = "button";
+    card.appendChild(el("span", "cat-card-name", c.name));
+    card.appendChild(el("span", "cat-card-count", n + (n === 1 ? " product" : " products")));
+    card.addEventListener("click", () => openCategory(c.id));
+    grid.appendChild(card);
+  });
+}
+$("catSearch").addEventListener("input", renderCategoryList);
+
+function friendlyCategoryError(error) {
+  return error.code === "23505" ? "A category with this name already exists." : error.message;
+}
+
+$("catForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("catMsg", "");
+  const name = $("catName").value.trim();
+  if (!name) return formMsg("catMsg", "Please write the category name.");
+  if (!categoriesReady) return formMsg("catMsg", "Categories are not set up yet. Run categories.sql in Supabase.");
+
+  $("catAddBtn").disabled = true;
+  const { error } = await supabaseClient.from("categories").insert({ name });
+  $("catAddBtn").disabled = false;
+  if (error) return formMsg("catMsg", friendlyCategoryError(error));
+
+  $("catName").value = "";
+  await loadCategories();
+  toast("Category added");
+});
+
+// ---- Categories tab: one category opened ----
+function openCategory(id) {
+  catDetailId = id;
+  $("catProdSearch").value = "";
+  renderCategoryDetail();
+}
+
+$("catBack").addEventListener("click", () => {
+  catDetailId = null;
+  renderCategoryDetail();
+});
+
+function renderCategoryDetail() {
+  let cat = categories.find((c) => c.id === catDetailId);
+  if (!cat) catDetailId = null;
+  $("catListMode").classList.toggle("hidden", !!cat);
+  $("catDetailMode").classList.toggle("hidden", !cat);
+  if (!cat) return;
+
+  const all = productsInCategory(cat.id);
+  const q = $("catProdSearch").value.trim().toLowerCase();
+  const list = all.filter((p) => p.name.toLowerCase().includes(q));
+
+  $("catDetailName").textContent = cat.name;
+  $("catDetailCount").textContent = all.length + (all.length === 1 ? " product" : " products");
+  $("catProdEmpty").classList.toggle("hidden", list.length > 0);
+  $("catProdEmpty").textContent = all.length
+    ? "No product found."
+    : 'No products in this category yet. Click "+ Add products".';
+
+  const body = $("catProdBody");
+  body.innerHTML = "";
+  list.forEach((p) => {
+    const tr = document.createElement("tr");
+    const tdImg = document.createElement("td");
+    tdImg.appendChild(makeThumb(p, "small"));
+    tr.appendChild(tdImg);
+    tr.appendChild(el("td", "", p.name));
+    tr.appendChild(el("td", "", money(p.price)));
+    tr.appendChild(el("td", p.quantity <= 0 ? "out" : p.quantity <= LOW_STOCK ? "low" : "", String(p.quantity)));
+
+    const act = el("td", "actions");
+    const edit = el("button", "act-btn", "Edit");
+    edit.type = "button";
+    edit.addEventListener("click", () => openProductModal(p));
+    const remove = el("button", "act-btn danger", "Remove");
+    remove.type = "button";
+    remove.title = "Take this product out of the category (the product is not deleted)";
+    remove.addEventListener("click", () => removeFromCategory(p));
+    act.appendChild(edit);
+    act.appendChild(remove);
+    tr.appendChild(act);
+    body.appendChild(tr);
+  });
+}
+$("catProdSearch").addEventListener("input", renderCategoryDetail);
+
+async function removeFromCategory(p) {
+  const { error } = await supabaseClient.from("products").update({ category_id: null }).eq("id", p.id);
+  if (error) return toast(error.message, "error");
+  await loadProducts();
+  toast("Removed from category");
+}
+
+$("catRenameBtn").addEventListener("click", async () => {
+  const cat = categories.find((c) => c.id === catDetailId);
+  if (!cat) return;
+  const name = (prompt("New name for this category:", cat.name) || "").trim();
+  if (!name || name === cat.name) return;
+  const { error } = await supabaseClient.from("categories").update({ name }).eq("id", cat.id);
+  if (error) return toast(friendlyCategoryError(error), "error");
+  await loadCategories();
+  toast("Category renamed");
+});
+
+$("catDeleteBtn").addEventListener("click", async () => {
+  const cat = categories.find((c) => c.id === catDetailId);
+  if (!cat) return;
+  const n = productsInCategory(cat.id).length;
+  const msg =
+    'Delete category "' + cat.name + '"?' +
+    (n ? "\n\nIts " + n + " product(s) are NOT deleted, they just become \"No category\"." : "");
+  if (!confirm(msg)) return;
+  const { error } = await supabaseClient.from("categories").delete().eq("id", cat.id);
+  if (error) return toast(error.message, "error");
+  catDetailId = null;
+  await loadCategories();
+  await loadProducts();
+  toast("Category deleted");
+});
+
+// ---- "+ Add products" popup: tick saved products and put them in this category ----
+$("catAddProductsBtn").addEventListener("click", () => {
+  const cat = categories.find((c) => c.id === catDetailId);
+  if (!cat) return;
+  cpSelected = new Set();
+  $("cpSearch").value = "";
+  $("cpTitle").textContent = 'Add products to "' + cat.name + '"';
+  formMsg("cpMsg", "");
+  renderCatPicker();
+  openModal("catPickModal");
+  $("cpSearch").focus();
+});
+
+function renderCatPicker() {
+  const q = $("cpSearch").value.trim().toLowerCase();
+  const rank = (p) => (p.category_id === catDetailId ? 2 : p.category_id ? 1 : 0); // no category first, already here last
+  const list = products
+    .filter((p) => [p.name, categoryName(p.category_id)].join(" ").toLowerCase().includes(q))
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+
+  const box = $("cpList");
+  box.innerHTML = "";
+  if (!list.length) {
+    box.appendChild(el("p", "empty", products.length ? "No product found." : "No products yet. Add some in Manage Products."));
+  }
+  list.forEach((p) => {
+    const here = p.category_id === catDetailId;
+    const row = el("label", "cp-row" + (here ? " here" : ""));
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = here || cpSelected.has(p.id);
+    cb.disabled = here;
+    cb.addEventListener("change", () => {
+      if (cb.checked) cpSelected.add(p.id);
+      else cpSelected.delete(p.id);
+      updateCpCount();
+    });
+    row.appendChild(cb);
+    row.appendChild(makeThumb(p, "small"));
+    row.appendChild(el("span", "cp-name", p.name));
+    const tag = here ? "Already here" : p.category_id ? "In: " + categoryName(p.category_id) + " (will move)" : "No category";
+    row.appendChild(el("span", "cp-tag" + (p.category_id && !here ? " move" : ""), tag));
+    box.appendChild(row);
+  });
+  updateCpCount();
+}
+function updateCpCount() {
+  const n = cpSelected.size;
+  $("cpSelCount").textContent = n + " selected";
+  $("cpSave").disabled = n === 0;
+}
+$("cpSearch").addEventListener("input", renderCatPicker);
+
+$("cpSave").addEventListener("click", async () => {
+  if (!cpSelected.size || !catDetailId) return;
+  $("cpSave").disabled = true;
+  const n = cpSelected.size;
+  const { error } = await supabaseClient.from("products").update({ category_id: catDetailId }).in("id", [...cpSelected]);
+  if (error) {
+    $("cpSave").disabled = false;
+    return formMsg("cpMsg", error.message);
+  }
+  closeModal("catPickModal");
+  await loadProducts();
+  toast(n + (n === 1 ? " product added" : " products added"));
+});
+
+// ---- Product popup: search a category, pick it, or create a new one on the spot ----
+function renderPmCategory() {
+  $("pmCatField").classList.toggle("hidden", !categoriesReady);
+
+  const sel = $("pmCatSelected");
+  sel.innerHTML = "";
+  if (pmCategoryId && categoryName(pmCategoryId)) {
+    const chip = el("span", "cat-selected-chip", categoryName(pmCategoryId));
+    const x = el("button", "cat-x", "\u00d7");
+    x.type = "button";
+    x.title = "Remove category";
+    x.addEventListener("click", () => { pmCategoryId = null; renderPmCategory(); });
+    chip.appendChild(x);
+    sel.appendChild(chip);
+  } else {
+    sel.appendChild(el("span", "muted small", "No category selected"));
+  }
+
+  const q = $("pmCatSearch").value.trim();
+  const ql = q.toLowerCase();
+  const box = $("pmCatOptions");
+  box.innerHTML = "";
+  const matches = categories.filter((c) => c.name.toLowerCase().includes(ql));
+  matches.forEach((c) => {
+    const b = el("button", "cat-opt" + (c.id === pmCategoryId ? " selected" : ""), c.name);
+    b.type = "button";
+    b.addEventListener("click", () => { pmCategoryId = c.id; renderPmCategory(); });
+    box.appendChild(b);
+  });
+  if (q && !categories.some((c) => c.name.toLowerCase() === ql)) {
+    const b = el("button", "cat-opt create", '+ Create "' + q + '"');
+    b.type = "button";
+    b.addEventListener("click", () => createCategoryFromPicker(q));
+    box.appendChild(b);
+  }
+  if (!box.children.length) box.appendChild(el("span", "muted small", "No categories yet. Type a name to create one."));
+}
+
+async function createCategoryFromPicker(name) {
+  formMsg("productFormMsg", "");
+  const { error } = await supabaseClient.from("categories").insert({ name });
+  if (error && error.code !== "23505") return formMsg("productFormMsg", friendlyCategoryError(error));
+  await loadCategories(true);
+  const made = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (made) pmCategoryId = made.id;
+  $("pmCatSearch").value = "";
+  renderPmCategory();
+}
+
+$("pmCatSearch").addEventListener("input", renderPmCategory);
+// Enter in this box must not save the whole product form: it picks the first match instead
+$("pmCatSearch").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const first = $("pmCatOptions").querySelector(".cat-opt");
+  if (first) first.click();
+});
