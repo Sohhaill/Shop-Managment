@@ -2817,13 +2817,14 @@ async function loadCategories(quiet) {
 
 // Products matching the search words (name, category name, and description in Manage Products) + the selected button
 function filterProducts(list, query, sel, withDesc) {
-  const q = query.trim().toLowerCase();
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return list.filter((p) => {
     if (sel === "none") {
       if (p.category_id) return false;
     } else if (sel !== "all" && p.category_id !== sel) return false;
-    if (!q) return true;
-    return [p.name, categoryName(p.category_id), withDesc ? p.description : ""].join(" ").toLowerCase().includes(q);
+    if (!words.length) return true;
+    const text = [p.name, categoryName(p.category_id), withDesc ? p.description : ""].join(" ").toLowerCase();
+    return words.every((w) => text.includes(w));
   });
 }
 

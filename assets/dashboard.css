@@ -1329,3 +1329,33 @@ textarea:focus {
   .note-fields { grid-template-columns: 1fr; }
   .note-grid { grid-template-columns: 1fr; }
 }
+
+
+/* ===== Home: Tasks + Notes side by side, products keep enough room ===== */
+.home-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 16px;
+  flex-shrink: 0;
+}
+.home-info:not(:has(> :not(.hidden))) { display: none; } /* nothing to show: no empty gap */
+.home-info .home-tasks,
+.home-info .home-notes {
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: 8px 14px 4px;
+}
+.home-info .ht-label { padding-top: 0; }
+.home-info .ht-list { max-height: 84px; padding: 8px 4px 6px; }
+.home-info .hn-list { padding: 6px 4px 8px; }
+.home-info .note-card.home { flex-basis: 190px; max-width: 190px; padding: 8px 10px; }
+.home-info .note-card.home .note-body { -webkit-line-clamp: 2; }
+
+/* the products area never gets squeezed away: the page scrolls instead */
+.home-grid { min-height: 440px; }
+
+@media (max-width: 768px) {
+  .home-info { grid-template-columns: 1fr; }
+  .home-grid { min-height: 0; }
+}
