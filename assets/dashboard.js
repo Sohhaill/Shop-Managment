@@ -146,7 +146,12 @@ function renderGrid() {
 function productCard(p, onAdd, label = "Add") {
   const card = el("div", "product-card");
   card.appendChild(makeThumb(p));
-  card.appendChild(el("div", "p-name", p.name));
+  // fixed-height box keeps the card the same size; on hover the full name opens over the card
+  const nameBox = el("div", "p-name-box");
+  const nameEl = el("div", "p-name", p.name);
+  nameEl.title = p.name; // phones / keyboard: the browser's own tooltip as a backup
+  nameBox.appendChild(nameEl);
+  card.appendChild(nameBox);
   card.appendChild(el("div", "p-price", money(p.price)));
 
   const stock = el("div", "p-stock", p.quantity > 0 ? "In stock: " + p.quantity : "Out of stock");
@@ -2817,14 +2822,13 @@ async function loadCategories(quiet) {
 
 // Products matching the search words (name, category name, and description in Manage Products) + the selected button
 function filterProducts(list, query, sel, withDesc) {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const q = query.trim().toLowerCase();
   return list.filter((p) => {
     if (sel === "none") {
       if (p.category_id) return false;
     } else if (sel !== "all" && p.category_id !== sel) return false;
-    if (!words.length) return true;
-    const text = [p.name, categoryName(p.category_id), withDesc ? p.description : ""].join(" ").toLowerCase();
-    return words.every((w) => text.includes(w));
+    if (!q) return true;
+    return [p.name, categoryName(p.category_id), withDesc ? p.description : ""].join(" ").toLowerCase().includes(q);
   });
 }
 

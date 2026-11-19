@@ -219,12 +219,32 @@ button.admin-btn {
   border: 1px solid var(--border);
   border-radius: 12px;
 }
+.p-name-box { position: relative; height: 1.4em; }
 .p-name {
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* hover: the full product name opens over the card (the card itself does not change size) */
+.product-card:hover .p-name {
+  position: absolute;
+  top: -6px;
+  left: -8px;
+  right: -8px;
+  z-index: 5;
+  padding: 6px 8px;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  pointer-events: none; /* clicks still reach the Add button underneath */
 }
 .p-price {
   color: var(--accent);
