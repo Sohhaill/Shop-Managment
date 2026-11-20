@@ -187,7 +187,7 @@
         if (en.expires_on) meta.appendChild(el("span", "tag", "Valid till " + fmtDate(en.expires_on)));
         meta.appendChild(el("span", "", fmtDate(en.created_at)));
         c.appendChild(meta);
-        const link = waLink(en.whatsapp, 'Hello, I saw "' + en.title + '" on your page (' + name + ').');
+        const link = waLink(en.whatsapp, '');
         if (link) c.appendChild(linkBtn("wa", "\u{1F4AC} WhatsApp", link));
         list.appendChild(c);
       });
