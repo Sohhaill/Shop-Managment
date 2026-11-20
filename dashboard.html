@@ -789,41 +789,41 @@
             </form>
 
             <!-- entries -->
-            <form id="enForm" class="card-form ce-card" novalidate>
-              <h3 id="enFormTitle">Add an entry (offer, news, notice)</h3>
+            <form id="ceEnForm" class="card-form ce-card" novalidate>
+              <h3 id="ceEnFormTitle">Add an entry (offer, news, notice)</h3>
               <div class="note-fields">
                 <div class="span-2">
                   <label for="enTitle">Title *</label>
-                  <input type="text" id="enTitle" maxlength="120" placeholder="e.g. New phone cases arrived" autocomplete="off" />
+                  <input type="text" id="ceEnTitle" maxlength="120" placeholder="e.g. New phone cases arrived" autocomplete="off" />
                 </div>
                 <div class="span-2">
                   <label for="enDesc">Description (optional)</label>
-                  <textarea id="enDesc" rows="3" maxlength="1000" placeholder="More details..."></textarea>
+                  <textarea id="ceEnDesc" rows="3" maxlength="1000" placeholder="More details..."></textarea>
                 </div>
                 <div>
                   <label for="enWa">WhatsApp number (optional)</label>
-                  <input type="tel" id="enWa" maxlength="25" placeholder="e.g. 0300 1234567" autocomplete="off" />
+                  <input type="tel" id="ceEnWa" maxlength="25" placeholder="e.g. 0300 1234567" autocomplete="off" />
                 </div>
                 <div>
                   <label for="enExpires">Valid till (optional)</label>
-                  <input type="date" id="enExpires" />
+                  <input type="date" id="ceEnExpires" />
                 </div>
                 <div class="span-2">
-                  <label class="check-line"><input type="checkbox" id="enPinned" /> Pin to the top</label>
-                  <label class="check-line"><input type="checkbox" id="enVisible" checked /> Show on the page</label>
+                  <label class="check-line"><input type="checkbox" id="ceEnPinned" /> Pin to the top</label>
+                  <label class="check-line"><input type="checkbox" id="ceEnVisible" checked /> Show on the page</label>
                 </div>
               </div>
               <p class="muted small">If you add a WhatsApp number, customers can tap the entry and chat with that number.</p>
               <div class="form-actions">
-                <button type="submit" id="enSubmit" style="width: fit-content">Add entry</button>
-                <button type="button" id="enCancel" class="act-btn hidden">Cancel edit</button>
-                <div id="enMsg" class="message" role="alert"></div>
+                <button type="submit" id="ceEnSubmit" style="width: fit-content">Add entry</button>
+                <button type="button" id="ceEnCancel" class="act-btn hidden">Cancel edit</button>
+                <div id="ceEnMsg" class="message" role="alert"></div>
               </div>
             </form>
 
-            <div class="list-head"><h3>Your entries</h3><span class="muted small" id="enCount"></span></div>
-            <div id="enList" class="en-list"></div>
-            <p id="enEmpty" class="empty hidden">No entries yet. Add your first offer or notice above.</p>
+            <div class="list-head"><h3>Your entries</h3><span class="muted small" id="ceEnCount"></span></div>
+            <div id="ceEnList" class="en-list"></div>
+            <p id="ceEnEmpty" class="empty hidden">No entries yet. Add your first offer or notice above.</p>
           </div>
         </section>
 

@@ -3595,9 +3595,9 @@ $("ceForm").addEventListener("submit", async (e) => {
 
 // ---- entries ----
 function renderCpEntries() {
-  $("enCount").textContent = cpEntries.length + (cpEntries.length === 1 ? " entry" : " entries");
-  $("enEmpty").classList.toggle("hidden", cpEntries.length > 0);
-  const list = $("enList");
+  $("ceEnCount").textContent = cpEntries.length + (cpEntries.length === 1 ? " entry" : " entries");
+  $("ceEnEmpty").classList.toggle("hidden", cpEntries.length > 0);
+  const list = $("ceEnList");
   list.innerHTML = "";
   [...cpEntries]
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.created_at) - new Date(a.created_at))
@@ -3622,41 +3622,41 @@ function renderCpEntries() {
         b.addEventListener("click", fn);
         act.appendChild(b);
       };
-      mk("Edit", "", () => startEditEntry(en.id));
-      mk(en.pinned ? "Unpin" : "Pin", "", () => updateEntry(en.id, { pinned: !en.pinned }));
-      mk(en.is_visible ? "Hide" : "Show", "", () => updateEntry(en.id, { is_visible: !en.is_visible }));
-      mk("Delete", "danger", () => deleteEntry(en));
+      mk("Edit", "", () => cpStartEditEntry(en.id));
+      mk(en.pinned ? "Unpin" : "Pin", "", () => cpUpdateEntry(en.id, { pinned: !en.pinned }));
+      mk(en.is_visible ? "Hide" : "Show", "", () => cpUpdateEntry(en.id, { is_visible: !en.is_visible }));
+      mk("Delete", "danger", () => cpDeleteEntry(en));
       card.appendChild(act);
       list.appendChild(card);
     });
 }
 
-function resetEntryForm() {
+function cpResetEntryForm() {
   cpEditId = null;
-  $("enForm").reset();
-  $("enVisible").checked = true;
-  $("enFormTitle").textContent = "Add an entry (offer, news, notice)";
-  $("enSubmit").textContent = "Add entry";
-  $("enCancel").classList.add("hidden");
+  $("ceEnForm").reset();
+  $("ceEnVisible").checked = true;
+  $("ceEnFormTitle").textContent = "Add an entry (offer, news, notice)";
+  $("ceEnSubmit").textContent = "Add entry";
+  $("ceEnCancel").classList.add("hidden");
 }
-$("enCancel").addEventListener("click", () => { resetEntryForm(); formMsg("enMsg", ""); });
+$("ceEnCancel").addEventListener("click", () => { cpResetEntryForm(); formMsg("ceEnMsg", ""); });
 
-function startEditEntry(id) {
+function cpStartEditEntry(id) {
   const en = cpEntries.find((x) => x.id === id);
   if (!en) return;
   cpEditId = id;
-  $("enTitle").value = en.title;
-  $("enDesc").value = en.description || "";
-  $("enWa").value = en.whatsapp || "";
-  $("enExpires").value = en.expires_on || "";
-  $("enPinned").checked = !!en.pinned;
-  $("enVisible").checked = !!en.is_visible;
-  $("enFormTitle").textContent = "Edit entry";
-  $("enSubmit").textContent = "Save changes";
-  $("enCancel").classList.remove("hidden");
-  formMsg("enMsg", "");
-  $("enForm").scrollIntoView({ behavior: "smooth", block: "start" });
-  $("enTitle").focus();
+  $("ceEnTitle").value = en.title;
+  $("ceEnDesc").value = en.description || "";
+  $("ceEnWa").value = en.whatsapp || "";
+  $("ceEnExpires").value = en.expires_on || "";
+  $("ceEnPinned").checked = !!en.pinned;
+  $("ceEnVisible").checked = !!en.is_visible;
+  $("ceEnFormTitle").textContent = "Edit entry";
+  $("ceEnSubmit").textContent = "Save changes";
+  $("ceEnCancel").classList.remove("hidden");
+  formMsg("ceEnMsg", "");
+  $("ceEnForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("ceEnTitle").focus();
 }
 
 async function refreshCpEntries() {
@@ -3668,47 +3668,47 @@ async function refreshCpEntries() {
   reloadCpPreview();
 }
 
-$("enForm").addEventListener("submit", async (e) => {
+$("ceEnForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  formMsg("enMsg", "");
-  const title = $("enTitle").value.trim();
-  if (!title) return formMsg("enMsg", "Please write a title.");
-  const wa = $("enWa").value.trim();
-  if (wa && !cpWaOk(wa)) return formMsg("enMsg", "The WhatsApp number does not look right. Example: 0300 1234567");
+  formMsg("ceEnMsg", "");
+  const title = $("ceEnTitle").value.trim();
+  if (!title) return formMsg("ceEnMsg", "Please write a title.");
+  const wa = $("ceEnWa").value.trim();
+  if (wa && !cpWaOk(wa)) return formMsg("ceEnMsg", "The WhatsApp number does not look right. Example: 0300 1234567");
 
   const payload = {
     title,
-    description: $("enDesc").value.trim() || null,
+    description: $("ceEnDesc").value.trim() || null,
     whatsapp: wa || null,
-    expires_on: $("enExpires").value || null,
-    pinned: $("enPinned").checked,
-    is_visible: $("enVisible").checked,
+    expires_on: $("ceEnExpires").value || null,
+    pinned: $("ceEnPinned").checked,
+    is_visible: $("ceEnVisible").checked,
   };
-  $("enSubmit").disabled = true;
+  $("ceEnSubmit").disabled = true;
   const q = cpEditId
     ? supabaseClient.from("customer_entries").update(payload).eq("id", cpEditId)
     : supabaseClient.from("customer_entries").insert(payload);
   const { error } = await q;
-  $("enSubmit").disabled = false;
-  if (error) return formMsg("enMsg", error.message);
+  $("ceEnSubmit").disabled = false;
+  if (error) return formMsg("ceEnMsg", error.message);
 
   const wasEdit = !!cpEditId;
-  resetEntryForm();
+  cpResetEntryForm();
   await refreshCpEntries();
   toast(wasEdit ? "Entry updated" : "Entry added");
 });
 
-async function updateEntry(id, fields) {
+async function cpUpdateEntry(id, fields) {
   const { error } = await supabaseClient.from("customer_entries").update(fields).eq("id", id);
   if (error) return toast(error.message, "error");
   await refreshCpEntries();
 }
 
-async function deleteEntry(en) {
+async function cpDeleteEntry(en) {
   if (!confirm('Delete this entry?\n\n"' + en.title + '"')) return;
   const { error } = await supabaseClient.from("customer_entries").delete().eq("id", en.id);
   if (error) return toast(error.message, "error");
-  if (cpEditId === en.id) resetEntryForm();
+  if (cpEditId === en.id) cpResetEntryForm();
   await refreshCpEntries();
   toast("Entry deleted");
 }
