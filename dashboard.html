@@ -147,6 +147,8 @@
           Task Reminder <span class="nav-badge hidden" id="taskBadge">0</span>
         </button>
         <button type="button" class="nav-item" data-view="notes">Notes</button>
+        <button type="button" class="nav-item" data-view="custpage">Customer Page</button>
+        <button type="button" class="nav-item" data-view="custedit">Edit Customer Page</button>
         <button type="button" class="nav-item" data-view="suppliers">Suppliers</button>
         <button type="button" class="nav-item" data-view="shopinfo">
           Shop Info
@@ -694,6 +696,135 @@
 
           <ul class="task-list" id="taskList"></ul>
           <p id="taskEmpty" class="empty hidden"></p>
+        </section>
+
+        <!-- ===== CUSTOMER PAGE (preview of what customers see) ===== -->
+        <section id="view-custpage" class="view hidden">
+          <div class="view-head">
+            <h2>Customer Page</h2>
+            <div class="view-head-right cp-head-actions">
+              <span id="cpPill" class="cp-pill hidden"></span>
+              <button type="button" id="cpToggleOpen" class="act-btn hidden">Mark as Closed</button>
+              <a id="cpOpenLink" class="act-btn hidden" target="_blank" rel="noopener">Open page</a>
+              <button type="button" id="cpCopyBtn2" class="act-btn hidden">Copy link</button>
+              <button type="button" id="cpGoEdit" class="act-btn hidden">Edit page</button>
+            </div>
+          </div>
+          <p id="cpSetupMsg" class="empty hidden"></p>
+          <div id="cpPreviewBox" class="cp-preview-box hidden">
+            <p class="muted small">This is exactly what your customers see when they scan your QR code.</p>
+            <div class="cp-phone"><iframe id="cpFrame" title="Customer page preview"></iframe></div>
+          </div>
+        </section>
+
+        <!-- ===== EDIT CUSTOMER PAGE ===== -->
+        <section id="view-custedit" class="view hidden">
+          <div class="view-head">
+            <h2>Edit Customer Page</h2>
+            <span class="muted small">What you save here shows on your customers' page</span>
+          </div>
+          <p id="ceSetupMsg" class="empty hidden"></p>
+
+          <div id="ceBody" class="ce-body hidden">
+            <!-- link + QR -->
+            <div class="card-form ce-card">
+              <h3>Your page link and QR code</h3>
+              <div class="ce-link-grid">
+                <div>
+                  <label for="ceUrl">Link (different for every shop)</label>
+                  <div class="input-row">
+                    <input type="text" id="ceUrl" readonly />
+                    <button type="button" id="ceCopy" class="act-btn">Copy</button>
+                  </div>
+                  <div class="ce-btn-row">
+                    <a id="ceOpen" class="act-btn" target="_blank" rel="noopener">Open page</a>
+                    <button type="button" id="ceDownloadQr" class="act-btn">Download QR poster</button>
+                    <button type="button" id="ceRegen" class="act-btn danger">Make a new link</button>
+                  </div>
+                  <p class="muted small ce-hint">
+                    Print the QR poster and stick it in your shop. A customer scans it with the phone camera, your
+                    page opens, and they can install it as an app. "Make a new link" is only for when you want the old
+                    link and old QR to stop working.
+                  </p>
+                </div>
+                <div class="ce-qr-box">
+                  <canvas id="ceQr" width="240" height="240"></canvas>
+                  <p id="ceQrMsg" class="muted small hidden">The QR code could not load. Check the internet and refresh.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- settings -->
+            <form id="ceForm" class="card-form ce-card" novalidate>
+              <h3>Shop status and announcement</h3>
+              <label class="check-line"><input type="checkbox" id="ceIsOpen" /> Shop is <strong>open</strong> right now</label>
+              <label for="ceNote">Status note (optional)</label>
+              <input type="text" id="ceNote" maxlength="120" placeholder="e.g. Back at 3 PM, Closed on Friday" autocomplete="off" />
+              <label for="ceAnn">Announcement (optional)</label>
+              <textarea id="ceAnn" rows="3" maxlength="600" placeholder="e.g. Eid sale: 20% off on all cases!"></textarea>
+
+              <h3 class="ce-sub">Contact</h3>
+              <label for="ceWa">WhatsApp number (optional)</label>
+              <input type="tel" id="ceWa" maxlength="25" placeholder="e.g. 0317 1234567" autocomplete="off" />
+              <p class="muted small">Customers get a WhatsApp button that opens a chat with this number.</p>
+              <label class="check-line"><input type="checkbox" id="ceShowDirections" /> Show the "Directions" button on the page</label>
+              <div class="ce-shopinfo">
+                <div class="muted small">Shop name, logo, address, phone, map link and opening hours come from your Shop Info:</div>
+                <div id="ceShopSummary" class="ce-summary"></div>
+                <button type="button" id="ceGoShopInfo" class="act-btn">Edit in Shop Info</button>
+              </div>
+
+              <h3 class="ce-sub">Products on the page</h3>
+              <label class="check-line"><input type="checkbox" id="ceShowProducts" /> Show my products to customers</label>
+              <label class="check-line"><input type="checkbox" id="ceShowPrices" /> Show prices</label>
+              <p class="muted small">Customers only see the name, picture, price and "in stock" or "out of stock". They never see your quantities.</p>
+
+              <h3 class="ce-sub">Visibility</h3>
+              <label class="check-line"><input type="checkbox" id="cePublished" /> Page is online (turn off to hide the whole page)</label>
+
+              <div class="form-actions">
+                <button type="submit" id="ceSave" style="width: fit-content">Save page</button>
+                <div id="ceMsg" class="message" role="alert"></div>
+              </div>
+            </form>
+
+            <!-- entries -->
+            <form id="enForm" class="card-form ce-card" novalidate>
+              <h3 id="enFormTitle">Add an entry (offer, news, notice)</h3>
+              <div class="note-fields">
+                <div class="span-2">
+                  <label for="enTitle">Title *</label>
+                  <input type="text" id="enTitle" maxlength="120" placeholder="e.g. New phone cases arrived" autocomplete="off" />
+                </div>
+                <div class="span-2">
+                  <label for="enDesc">Description (optional)</label>
+                  <textarea id="enDesc" rows="3" maxlength="1000" placeholder="More details..."></textarea>
+                </div>
+                <div>
+                  <label for="enWa">WhatsApp number (optional)</label>
+                  <input type="tel" id="enWa" maxlength="25" placeholder="e.g. 0300 1234567" autocomplete="off" />
+                </div>
+                <div>
+                  <label for="enExpires">Valid till (optional)</label>
+                  <input type="date" id="enExpires" />
+                </div>
+                <div class="span-2">
+                  <label class="check-line"><input type="checkbox" id="enPinned" /> Pin to the top</label>
+                  <label class="check-line"><input type="checkbox" id="enVisible" checked /> Show on the page</label>
+                </div>
+              </div>
+              <p class="muted small">If you add a WhatsApp number, customers can tap the entry and chat with that number.</p>
+              <div class="form-actions">
+                <button type="submit" id="enSubmit" style="width: fit-content">Add entry</button>
+                <button type="button" id="enCancel" class="act-btn hidden">Cancel edit</button>
+                <div id="enMsg" class="message" role="alert"></div>
+              </div>
+            </form>
+
+            <div class="list-head"><h3>Your entries</h3><span class="muted small" id="enCount"></span></div>
+            <div id="enList" class="en-list"></div>
+            <p id="enEmpty" class="empty hidden">No entries yet. Add your first offer or notice above.</p>
+          </div>
         </section>
 
         <!-- ===== NOTES ===== -->
@@ -1559,6 +1690,7 @@
     <!-- PDF bill: jsPDF + its table plugin (load jsPDF first) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.9/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
     <script src="./assets/dashboard.js"></script>
     <script src="./assets/calculator.js"></script>
     <script src="./assets/pwa.js"></script>

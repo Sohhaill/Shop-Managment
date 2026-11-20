@@ -112,6 +112,8 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     if (btn.dataset.view === "tasks") loadTasks();
     if (btn.dataset.view === "suppliers") loadSuppliers();
     if (btn.dataset.view === "notes") loadNotes();
+    if ((btn.dataset.view === "custpage" || btn.dataset.view === "custedit") &&
+        (!cpReady || Date.now() - cpLoadedAt > 30000)) loadCustomerPage();
     if (btn.dataset.view === "categories") { catDetailId = null; loadCategories(); }
   });
 });
@@ -3317,4 +3319,396 @@ async function deleteNote(n) {
   if (noteEditId === n.id) resetNoteForm();
   await loadNotes(true);
   toast("Note deleted");
+}
+
+// ====== CUSTOMER PAGE ======
+// customer.html?s=<link-name> is a public page (no login) made from your Shop Info + what you save here.
+// Every shop has its own link name, so every shop has its own QR code.
+// Database: customer_page.sql (tables customer_pages + customer_entries, function get_customer_page).
+const CP_COUNTRY_CODE = "92";       // a number like 0317... is checked as 92317...
+let cpRow = null;                   // this shop's page settings
+let cpEntries = [];                 // this shop's entries
+let cpReady = false;                // true once customer_page.sql has been run
+let cpLoadedAt = 0;
+let cpEditId = null;                // entry being edited (null = adding)
+let cpFrameSrc = "";                // what the preview iframe currently shows
+
+function cpPageUrl() {
+  return cpRow ? new URL("customer.html?s=" + encodeURIComponent(cpRow.slug), location.href).href : "";
+}
+
+// same rule the customer page uses, so a number that is accepted here also opens in WhatsApp there
+function cpWaOk(raw) {
+  let d = String(raw || "").replace(/\D+/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  else if (d.startsWith("0")) d = CP_COUNTRY_CODE + d.slice(1);
+  return d.length >= 8 && d.length <= 15;
+}
+
+async function loadCustomerPage() {
+  const select = () =>
+    supabaseClient.from("customer_pages").select("*").eq("user_id", currentUser.id).maybeSingle();
+  let { data, error } = await select();
+  if (!error && !data) {
+    const made = await supabaseClient.rpc("ensure_customer_page"); // first visit: creates the page + its own link
+    if (made.error) error = made.error;
+    else ({ data, error } = await select());
+  }
+  if (error || !data) {
+    cpReady = false;
+    cpRow = null;
+    cpEntries = [];
+    return renderCustomerPage(error ? error.message : "Could not create the page.");
+  }
+  cpRow = data;
+  cpReady = true;
+  cpLoadedAt = Date.now();
+  const en = await supabaseClient
+    .from("customer_entries").select("*").eq("user_id", currentUser.id)
+    .order("created_at", { ascending: false });
+  cpEntries = en.error ? [] : en.data;
+  renderCustomerPage("");
+  fillCpForm();
+}
+
+function renderCustomerPage(err) {
+  const setup = "The customer page is not set up yet. Run customer_page.sql once in Supabase (SQL Editor)." +
+    (err ? " (" + err + ")" : "");
+  ["cpSetupMsg", "ceSetupMsg"].forEach((id) => {
+    $(id).textContent = setup;
+    $(id).classList.toggle("hidden", cpReady);
+  });
+  $("ceBody").classList.toggle("hidden", !cpReady);
+  $("cpPreviewBox").classList.toggle("hidden", !cpReady);
+  ["cpPill", "cpToggleOpen", "cpOpenLink", "cpCopyBtn2", "cpGoEdit"].forEach((id) =>
+    $(id).classList.toggle("hidden", !cpReady));
+  if (!cpReady) return;
+  renderCpPreview();
+  renderCpLink();
+  renderCpEntries();
+}
+
+// ---- preview tab ----
+function renderCpPreview() {
+  const open = !!cpRow.is_open;
+  $("cpPill").textContent = open ? "Shop is OPEN" : "Shop is CLOSED";
+  $("cpPill").className = "cp-pill " + (open ? "open" : "closed");
+  $("cpToggleOpen").textContent = open ? "Mark as Closed" : "Mark as Open";
+  $("cpOpenLink").href = cpPageUrl();
+  const src = cpPageUrl() + "&preview=1";
+  if (cpFrameSrc !== src) {
+    cpFrameSrc = src;
+    $("cpFrame").src = src;
+  }
+}
+function reloadCpPreview() {
+  cpFrameSrc = "";
+  renderCpPreview();
+}
+
+$("cpToggleOpen").addEventListener("click", async () => {
+  const btn = $("cpToggleOpen");
+  btn.disabled = true;
+  const next = !cpRow.is_open;
+  const { error } = await supabaseClient
+    .from("customer_pages").update({ is_open: next, updated_at: new Date().toISOString() }).eq("user_id", currentUser.id);
+  btn.disabled = false;
+  if (error) return toast(error.message, "error");
+  cpRow.is_open = next;
+  $("ceIsOpen").checked = next;
+  reloadCpPreview();
+  toast(next ? "Shop is now shown as open" : "Shop is now shown as closed");
+});
+$("cpGoEdit").addEventListener("click", () => document.querySelector('.nav-item[data-view="custedit"]').click());
+$("ceGoShopInfo").addEventListener("click", () => document.querySelector('.nav-item[data-view="shopinfo"]').click());
+
+async function copyCpLink() {
+  const url = cpPageUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (e) {
+    const i = $("ceUrl");
+    i.select();
+    try { document.execCommand("copy"); } catch (e2) {}
+  }
+  toast("Link copied");
+}
+$("cpCopyBtn2").addEventListener("click", copyCpLink);
+$("ceCopy").addEventListener("click", copyCpLink);
+
+// ---- link + QR ----
+function drawQr(canvas, text, wantedPx) {
+  if (!window.qrcode) return false;
+  const qr = window.qrcode(0, "M");   // type 0 = size chosen automatically, M = medium error correction
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const quiet = 4;                                   // white border (the QR standard asks for 4 squares)
+  const cell = Math.max(2, Math.floor(wantedPx / (n + quiet * 2)));
+  const size = cell * (n + quiet * 2);
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#111111";
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) ctx.fillRect((c + quiet) * cell, (r + quiet) * cell, cell, cell);
+    }
+  }
+  return true;
+}
+
+function renderCpLink() {
+  const url = cpPageUrl();
+  $("ceUrl").value = url;
+  $("ceOpen").href = url;
+  const ok = drawQr($("ceQr"), url, 240);
+  $("ceQr").classList.toggle("hidden", !ok);
+  $("ceQrMsg").classList.toggle("hidden", ok);
+}
+
+// printable poster: shop name, QR, short text
+function downloadQrPoster() {
+  const url = cpPageUrl();
+  const qrCanvas = document.createElement("canvas");
+  if (!drawQr(qrCanvas, url, 700)) return toast("The QR code could not load. Refresh the page.", "error");
+  const W = 900, H = 1200;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const x = c.getContext("2d");
+  x.fillStyle = "#ffffff";
+  x.fillRect(0, 0, W, H);
+  x.fillStyle = "#1fa971";
+  x.fillRect(0, 0, W, 18);
+  x.fillRect(0, H - 18, W, 18);
+  x.textAlign = "center";
+
+  const name = (shopInfo && shopInfo.shop_name) || "Our shop";
+  x.fillStyle = "#17211b";
+  let size = 64;
+  x.font = "700 " + size + 'px "Segoe UI", Arial, sans-serif';
+  while (x.measureText(name).width > W - 100 && size > 28) {
+    size -= 4;
+    x.font = "700 " + size + 'px "Segoe UI", Arial, sans-serif';
+  }
+  x.fillText(name, W / 2, 130);
+
+  x.fillStyle = "#5d6b62";
+  x.font = '400 34px "Segoe UI", Arial, sans-serif';
+  x.fillText("Scan to see our offers and updates", W / 2, 200);
+
+  x.drawImage(qrCanvas, (W - 700) / 2, 250, 700, 700);
+
+  x.fillStyle = "#17211b";
+  x.font = '600 34px "Segoe UI", Arial, sans-serif';
+  x.fillText("Open your phone camera and point it here", W / 2, 1020);
+  x.fillStyle = "#5d6b62";
+  x.font = '400 24px "Segoe UI", Arial, sans-serif';
+  x.fillText("You can also install our page as an app", W / 2, 1065);
+  x.font = '400 20px "Segoe UI", Arial, sans-serif';
+  x.fillText(url.length > 70 ? url.slice(0, 67) + "..." : url, W / 2, 1120);
+
+  c.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "customer-page-qr-" + cpRow.slug + ".png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, "image/png");
+}
+$("ceDownloadQr").addEventListener("click", downloadQrPoster);
+
+$("ceRegen").addEventListener("click", async () => {
+  if (!confirm("Make a NEW link?\n\nThe old link and any printed QR code will stop working. You will need to print the new QR.")) return;
+  const { data, error } = await supabaseClient.rpc("regenerate_customer_slug");
+  if (error) return toast(error.message, "error");
+  cpRow.slug = data;
+  renderCpLink();
+  reloadCpPreview();
+  toast("New link created. Download and print the new QR.");
+});
+
+// ---- settings form ----
+function fillCpForm() {
+  if (!cpRow) return;
+  $("ceIsOpen").checked = !!cpRow.is_open;
+  $("ceNote").value = cpRow.status_note || "";
+  $("ceAnn").value = cpRow.announcement || "";
+  $("ceWa").value = cpRow.whatsapp || "";
+  $("ceShowProducts").checked = !!cpRow.show_products;
+  $("ceShowPrices").checked = cpRow.show_prices !== false;
+  $("ceShowDirections").checked = cpRow.show_directions !== false;
+  $("cePublished").checked = cpRow.is_published !== false;
+  formMsg("ceMsg", "");
+  renderCpShopSummary();
+}
+
+function renderCpShopSummary() {
+  const box = $("ceShopSummary");
+  box.innerHTML = "";
+  const si = shopInfo || {};
+  const rows = [
+    ["Shop name", si.shop_name],
+    ["Logo", si.logo_path ? "added" : null],
+    ["Address", [si.address, si.city].filter(Boolean).join(", ")],
+    ["Phone", si.phone],
+    ["Map link", si.map_link],
+    ["Opening hours", si.opening_hours],
+  ];
+  rows.forEach(([label, val]) => {
+    const row = el("div", "ce-sum-row");
+    row.appendChild(el("span", "ce-sum-label", label));
+    row.appendChild(el("span", val ? "ce-sum-val" : "ce-sum-val missing", val || "not added"));
+    box.appendChild(row);
+  });
+}
+
+$("ceForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("ceMsg", "");
+  const wa = $("ceWa").value.trim();
+  if (wa && !cpWaOk(wa)) return formMsg("ceMsg", "The WhatsApp number does not look right. Example: 0317 1234567");
+
+  const payload = {
+    is_open: $("ceIsOpen").checked,
+    status_note: $("ceNote").value.trim() || null,
+    announcement: $("ceAnn").value.trim() || null,
+    whatsapp: wa || null,
+    show_products: $("ceShowProducts").checked,
+    show_prices: $("ceShowPrices").checked,
+    show_directions: $("ceShowDirections").checked,
+    is_published: $("cePublished").checked,
+    updated_at: new Date().toISOString(),
+  };
+  $("ceSave").disabled = true;
+  const { error } = await supabaseClient.from("customer_pages").update(payload).eq("user_id", currentUser.id);
+  $("ceSave").disabled = false;
+  if (error) return formMsg("ceMsg", error.message);
+  Object.assign(cpRow, payload);
+  reloadCpPreview();
+  formMsg("ceMsg", "Saved. Customers see the change when they open or refresh the page.", "success");
+});
+
+// ---- entries ----
+function renderCpEntries() {
+  $("enCount").textContent = cpEntries.length + (cpEntries.length === 1 ? " entry" : " entries");
+  $("enEmpty").classList.toggle("hidden", cpEntries.length > 0);
+  const list = $("enList");
+  list.innerHTML = "";
+  [...cpEntries]
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.created_at) - new Date(a.created_at))
+    .forEach((en) => {
+      const expired = en.expires_on && en.expires_on < localDate();
+      const card = el("div", "card-form en-card" + (en.is_visible && !expired ? "" : " dim"));
+      const head = el("div", "en-head");
+      head.appendChild(el("strong", "en-title", (en.pinned ? "📌 " : "") + en.title));
+      const tags = el("div", "en-tags");
+      if (!en.is_visible) tags.appendChild(el("span", "en-tag", "Hidden"));
+      if (expired) tags.appendChild(el("span", "en-tag", "Expired"));
+      else if (en.expires_on) tags.appendChild(el("span", "en-tag ok", "Valid till " + fmtDate(en.expires_on)));
+      head.appendChild(tags);
+      card.appendChild(head);
+      if (en.description) card.appendChild(el("p", "en-desc", en.description));
+      if (en.whatsapp) card.appendChild(el("p", "muted small", "WhatsApp: " + en.whatsapp));
+
+      const act = el("div", "note-actions");
+      const mk = (label, cls, fn) => {
+        const b = el("button", "act-btn " + cls, label);
+        b.type = "button";
+        b.addEventListener("click", fn);
+        act.appendChild(b);
+      };
+      mk("Edit", "", () => startEditEntry(en.id));
+      mk(en.pinned ? "Unpin" : "Pin", "", () => updateEntry(en.id, { pinned: !en.pinned }));
+      mk(en.is_visible ? "Hide" : "Show", "", () => updateEntry(en.id, { is_visible: !en.is_visible }));
+      mk("Delete", "danger", () => deleteEntry(en));
+      card.appendChild(act);
+      list.appendChild(card);
+    });
+}
+
+function resetEntryForm() {
+  cpEditId = null;
+  $("enForm").reset();
+  $("enVisible").checked = true;
+  $("enFormTitle").textContent = "Add an entry (offer, news, notice)";
+  $("enSubmit").textContent = "Add entry";
+  $("enCancel").classList.add("hidden");
+}
+$("enCancel").addEventListener("click", () => { resetEntryForm(); formMsg("enMsg", ""); });
+
+function startEditEntry(id) {
+  const en = cpEntries.find((x) => x.id === id);
+  if (!en) return;
+  cpEditId = id;
+  $("enTitle").value = en.title;
+  $("enDesc").value = en.description || "";
+  $("enWa").value = en.whatsapp || "";
+  $("enExpires").value = en.expires_on || "";
+  $("enPinned").checked = !!en.pinned;
+  $("enVisible").checked = !!en.is_visible;
+  $("enFormTitle").textContent = "Edit entry";
+  $("enSubmit").textContent = "Save changes";
+  $("enCancel").classList.remove("hidden");
+  formMsg("enMsg", "");
+  $("enForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("enTitle").focus();
+}
+
+async function refreshCpEntries() {
+  const en = await supabaseClient
+    .from("customer_entries").select("*").eq("user_id", currentUser.id)
+    .order("created_at", { ascending: false });
+  cpEntries = en.error ? cpEntries : en.data;
+  renderCpEntries();
+  reloadCpPreview();
+}
+
+$("enForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formMsg("enMsg", "");
+  const title = $("enTitle").value.trim();
+  if (!title) return formMsg("enMsg", "Please write a title.");
+  const wa = $("enWa").value.trim();
+  if (wa && !cpWaOk(wa)) return formMsg("enMsg", "The WhatsApp number does not look right. Example: 0300 1234567");
+
+  const payload = {
+    title,
+    description: $("enDesc").value.trim() || null,
+    whatsapp: wa || null,
+    expires_on: $("enExpires").value || null,
+    pinned: $("enPinned").checked,
+    is_visible: $("enVisible").checked,
+  };
+  $("enSubmit").disabled = true;
+  const q = cpEditId
+    ? supabaseClient.from("customer_entries").update(payload).eq("id", cpEditId)
+    : supabaseClient.from("customer_entries").insert(payload);
+  const { error } = await q;
+  $("enSubmit").disabled = false;
+  if (error) return formMsg("enMsg", error.message);
+
+  const wasEdit = !!cpEditId;
+  resetEntryForm();
+  await refreshCpEntries();
+  toast(wasEdit ? "Entry updated" : "Entry added");
+});
+
+async function updateEntry(id, fields) {
+  const { error } = await supabaseClient.from("customer_entries").update(fields).eq("id", id);
+  if (error) return toast(error.message, "error");
+  await refreshCpEntries();
+}
+
+async function deleteEntry(en) {
+  if (!confirm('Delete this entry?\n\n"' + en.title + '"')) return;
+  const { error } = await supabaseClient.from("customer_entries").delete().eq("id", en.id);
+  if (error) return toast(error.message, "error");
+  if (cpEditId === en.id) resetEntryForm();
+  await refreshCpEntries();
+  toast("Entry deleted");
 }
