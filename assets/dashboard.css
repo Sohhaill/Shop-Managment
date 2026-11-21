@@ -1365,6 +1365,7 @@ textarea:focus {
   gap: 0;
   min-width: 0;
   padding: 8px 14px 4px;
+  overflow: auto;
 }
 .home-info .ht-label { padding-top: 0; }
 .home-info .ht-list { max-height: 84px; padding: 8px 4px 6px; }
