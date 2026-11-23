@@ -520,6 +520,7 @@
                   <th>Qty</th>
                   <th>Price</th>
                   <th>Total</th>
+                  <th class="sale-act-col"></th>
                 </tr>
               </thead>
               <tbody id="salesBody"></tbody>
@@ -1665,6 +1666,25 @@
         </div>
         <ul class="bh-list" id="bhList"></ul>
         <p id="bhEmpty" class="empty hidden">No entries on this day.</p>
+      </div>
+    </div>
+
+    <!-- ===== SALE MANAGEMENT: how many to remove ===== -->
+    <div class="modal hidden" id="rmQtyModal">
+      <div class="modal-box">
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+        <h3 id="rmTitle">Remove from sale</h3>
+        <p class="muted small" id="rmInfo"></p>
+        <form id="rmForm" novalidate>
+          <label for="rmQty">Enter quantity to remove</label>
+          <input type="number" id="rmQty" min="1" step="1" inputmode="numeric" placeholder="e.g. 1" required />
+          <p class="muted small" id="rmHint"></p>
+          <div id="rmMsg" class="message" role="alert"></div>
+          <div class="tx-buttons">
+            <button type="submit" id="rmSubmit" class="tx-btn send">Remove</button>
+            <button type="button" id="rmAll" class="tx-btn receive">Remove all</button>
+          </div>
+        </form>
       </div>
     </div>
 

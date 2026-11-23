@@ -1519,3 +1519,7 @@ td.actions .bb-eye {
 @media (max-width: 520px) {
   .bh-stats { grid-template-columns: 1fr 1fr; }
 }
+
+/* ===== Sale management: Remove button ===== */
+.sale-act-col { width: 1%; }
+.sale-act { text-align: right; white-space: nowrap; }

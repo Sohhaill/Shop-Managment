@@ -675,6 +675,15 @@ async function loadSalesForDate() {
     ];
     if (!single) cells.unshift(fmtDate(s.sale_date));
     cells.forEach((t) => tr.appendChild(el("td", "", t)));
+
+    // Remove: quantity 1 removes it, more than 1 asks how many first. The quantity goes back to stock.
+    const act = el("td", "sale-act");
+    const rm = el("button", "act-btn danger", "Remove");
+    rm.type = "button";
+    rm.title = sale_undoTitle(s);
+    rm.addEventListener("click", () => startRemoveFromManagement(s, rm));
+    act.appendChild(rm);
+    tr.appendChild(act);
     body.appendChild(tr);
   });
 
@@ -690,6 +699,78 @@ async function loadSalesForDate() {
   renderDayChart(from, dayCount, perDay);
   loadBalanceHistoryForSales(from, to, single, myReq); // balance entries of the same days
 }
+
+// ---- Sale management: remove one line (or part of it) and put the stock back ----
+let rmSale = null;
+
+async function refreshAfterRemove() {
+  await Promise.all([loadSalesForDate(), loadProducts(), loadTodaySales(), loadBalances()]);
+}
+
+async function startRemoveFromManagement(sale, btn) {
+  if (sale.quantity > 1 && !sale.balance_id) {
+    rmSale = sale;
+    $("rmTitle").textContent = sale.product_name;
+    $("rmInfo").textContent = "Sold: " + sale.quantity + " \u00d7 " + money(sale.unit_price) + " = " + money(sale.total) +
+      (sale.product_id ? ". The removed quantity goes back to stock." : ". (Custom item: no stock to restore.)");
+    $("rmQty").value = "";
+    $("rmQty").max = String(sale.quantity);
+    $("rmHint").textContent = "Between 1 and " + sale.quantity + ".";
+    $("rmAll").textContent = "Remove all (" + sale.quantity + ")";
+    formMsg("rmMsg", "");
+    openModal("rmQtyModal");
+    $("rmQty").focus();
+    return;
+  }
+  // quantity 1 (or a balance line): remove it whole
+  const note = balanceUndoNote(sale);
+  const msg = (sale.product_id
+    ? 'Remove "' + sale.product_name + '" from this sale? It goes back to stock.'
+    : 'Remove "' + sale.product_name + '" from this sale?') + note;
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  const err = await deleteSaleAndUndo(sale);
+  btn.disabled = false;
+  if (err) return toast(err, "error");
+  await refreshAfterRemove();
+  toast(note ? "Removed, balance restored" : "Removed, stock restored");
+}
+
+async function submitRemoveQty(all) {
+  if (!rmSale) return;
+  formMsg("rmMsg", "");
+  const sale = rmSale;
+  const qty = all ? sale.quantity : parseInt($("rmQty").value, 10);
+  if (!Number.isInteger(qty) || qty < 1) return formMsg("rmMsg", "Enter how many to remove.");
+  if (qty > sale.quantity) return formMsg("rmMsg", "Only " + sale.quantity + " were sold in this line.");
+
+  const buttons = [$("rmSubmit"), $("rmAll")];
+  buttons.forEach((b) => (b.disabled = true));
+  let err = null;
+  if (qty === sale.quantity) {
+    err = await deleteSaleAndUndo(sale);                       // the whole line
+  } else {
+    const { data, error } = await supabaseClient.rpc("remove_sale_quantity", { p_sale_id: String(sale.id), p_qty: qty });
+    if (error) {
+      err = error.code === "PGRST202" || /could not find the function/i.test(error.message || "")
+        ? "Removing a part needs sale_remove_qty.sql. Run it once in Supabase (SQL Editor)."
+        : error.message;
+    } else if (data === "whole") {
+      err = await deleteSaleAndUndo(sale);
+    } else if (data !== "ok") {
+      err = data === "notfound" ? "This sale no longer exists. Refresh the page." : "Could not remove (" + data + ").";
+    }
+  }
+  buttons.forEach((b) => (b.disabled = false));
+  if (err) return formMsg("rmMsg", err);
+
+  rmSale = null;
+  closeModal("rmQtyModal");
+  await refreshAfterRemove();
+  toast(qty === sale.quantity ? "Removed, stock restored" : "Removed " + qty + ", stock restored");
+}
+$("rmForm").addEventListener("submit", (e) => { e.preventDefault(); submitRemoveQty(false); });
+$("rmAll").addEventListener("click", () => submitRemoveQty(true));
 
 // Horizontal bars: which items sold the most
 function renderTopChart() {
@@ -1715,8 +1796,11 @@ function bhTotals(rows) {
   const t = { out: 0, inn: 0, sale: 0 };
   rows.forEach((h) => {
     const a = Number(h.actual_amount) || 0;
-    if (h.tx_type === "send" || h.tx_type === "undo_receive") t.out += h.tx_type === "send" ? a : -a;
-    if (h.tx_type === "receive" || h.tx_type === "undo_send") t.inn += h.tx_type === "receive" ? a : -a;
+    // an "undone" line cancels the original: undo_send takes back from Sent, undo_receive from Received
+    if (h.tx_type === "send") t.out += a;
+    if (h.tx_type === "undo_send") t.out -= a;
+    if (h.tx_type === "receive") t.inn += a;
+    if (h.tx_type === "undo_receive") t.inn -= a;
     t.sale += Number(h.sale_amount) || 0;
   });
   return t;
