@@ -364,7 +364,18 @@ async function deleteSaleAndUndo(sale) {
   }
 
   switch (data) {
-    case "ok": return null;
+    case "ok":
+      if (sale.balance_id && sale.balance_amount != null) {
+        await logBalanceHistory({
+          balance_id: sale.balance_id,
+          tx_type: sale.balance_type === "send" ? "undo_send" : "undo_receive",
+          actual_amount: Number(sale.balance_amount),
+          sale_amount: -Number(sale.total),
+          sale_id: String(sale.id),
+          description: "Sale removed, balance restored",
+        });
+      }
+      return null;
     case "insufficient":
       return "Cannot remove this: it was a Receive of " + money(sale.balance_amount) +
         " and the balance now has less than that.";
@@ -677,6 +688,7 @@ async function loadSalesForDate() {
   topRows = Object.values(perItem);
   renderTopChart();
   renderDayChart(from, dayCount, perDay);
+  loadBalanceHistoryForSales(from, to, single, myReq); // balance entries of the same days
 }
 
 // Horizontal bars: which items sold the most
@@ -1422,13 +1434,16 @@ function renderBalanceBar() {
   }
 
   balances.forEach((b) => {
+    const wrap = el("div", "bb-chip-wrap");
     const chip = el("button", "bb-chip");
     chip.type = "button";
     chip.title = b.title;
     chip.appendChild(el("span", "bb-title", b.title));
     chip.appendChild(el("span", "bb-amount", money(b.amount)));
     chip.addEventListener("click", () => openTxModal(b));
-    list.appendChild(chip);
+    wrap.appendChild(chip);
+    wrap.appendChild(makeEyeButton(b));
+    list.appendChild(wrap);
   });
 }
 
@@ -1447,6 +1462,7 @@ function renderBalanceTable() {
     tr.appendChild(el("td", "desc", b.description || "-"));
 
     const act = el("td", "actions");
+    act.appendChild(makeEyeButton(b));
     [
       ["Edit", "", () => startEditBalance(b)],
       ["Delete", "danger", () => deleteBalance(b)],
@@ -1519,6 +1535,18 @@ $("balanceForm").addEventListener("submit", async (e) => {
   const msg = error ? error.message : statusMessage(data);
   if (msg) return formMsg("balanceFormMsg", msg);
 
+  if (isEdit && Number(editingBalance.amount) !== amount) {
+    await logBalanceHistory({
+      balance_id: editingBalance.id,
+      balance_title: title,
+      tx_type: "edit",
+      actual_amount: Math.abs(amount - Number(editingBalance.amount)),
+      balance_before: Number(editingBalance.amount),
+      balance_after: amount,
+      description: desc || "Balance edited by hand",
+    });
+  }
+
   closeModal("balanceModal");
   await loadBalances();
   toast(isEdit ? "Entry updated" : "Entry added");
@@ -1587,6 +1615,16 @@ async function submitTx(type) {
   const msg = error ? error.message : statusMessage(data);
   if (msg) return formMsg("txMsg", msg);
 
+  // Save the actual amount in the history (this is separate from the sale amount)
+  await logBalanceHistory({
+    balance_id: txBalance.id,
+    balance_title: txBalance.title,
+    tx_type: type,
+    actual_amount: amount,
+    sale_amount: sale > 0 ? sale : 0,
+    description: $("txDesc").value.trim() || null,
+  });
+
   closeModal("txModal");
   await Promise.all([loadBalances(), loadTodaySales()]);
   toast(type === "send" ? "Sent. Balance updated" : "Received. Balance updated");
@@ -1595,6 +1633,197 @@ async function submitTx(type) {
 $("txSend").addEventListener("click", () => submitTx("send"));
 $("txReceive").addEventListener("click", () => submitTx("receive"));
 $("txForm").addEventListener("submit", (e) => e.preventDefault());
+
+// ====== BALANCE HISTORY ======
+// Every Send / Receive is saved in "balance_history" (run balance_history.sql once).
+// It keeps the ACTUAL amount, the amount added to sale, the time, and the balance before / after.
+// If that table is not created yet, the app keeps working as before and just skips saving.
+const BH_TYPES = {
+  send: ["Send", "bh-out"],
+  receive: ["Receive", "bh-in"],
+  undo_send: ["Send undone", "bh-undo"],
+  undo_receive: ["Receive undone", "bh-undo"],
+  edit: ["Edited", "bh-undo"],
+};
+let bhWarned = false;
+let bhBalance = null; // balance shown in the history popup
+
+function makeEyeButton(b) {
+  const eye = el("button", "bb-eye", "\u{1F441}");
+  eye.type = "button";
+  eye.title = "View history of " + b.title;
+  eye.setAttribute("aria-label", "View history of " + b.title);
+  eye.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openBalanceHistory(b);
+  });
+  return eye;
+}
+
+// Saves one history row. Never stops the main action if it fails.
+async function logBalanceHistory(row) {
+  try {
+    let before = row.balance_before;
+    let after = row.balance_after;
+    if (after == null) {
+      // read the balance as the database has it right now, then work out "before"
+      const cur = await supabaseClient.from("balances").select("amount").eq("id", row.balance_id).maybeSingle();
+      if (!cur.error && cur.data) {
+        after = Number(cur.data.amount);
+        const amt = Number(row.actual_amount) || 0;
+        const down = row.tx_type === "send" || row.tx_type === "undo_receive";
+        before = down ? after + amt : after - amt;
+      }
+    }
+    const b = balances.find((x) => String(x.id) === String(row.balance_id));
+    const { error } = await supabaseClient.from("balance_history").insert({
+      balance_id: String(row.balance_id),
+      balance_title: row.balance_title || (b ? b.title : "Balance"),
+      tx_type: row.tx_type,
+      actual_amount: row.actual_amount,
+      sale_amount: row.sale_amount || 0,
+      balance_before: before == null ? null : before,
+      balance_after: after == null ? null : after,
+      description: row.description || null,
+      tx_date: localDate(),
+      sale_id: row.sale_id || null,
+    });
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Balance history not saved:", err);
+    if (!bhWarned) {
+      bhWarned = true;
+      toast("Done, but history was not saved. Run balance_history.sql in Supabase.", "error");
+    }
+  }
+}
+
+async function fetchBalanceHistory(from, to, balanceId) {
+  let q = supabaseClient
+    .from("balance_history")
+    .select("*")
+    .gte("tx_date", from)
+    .lte("tx_date", to)
+    .order("created_at", { ascending: false });
+  if (balanceId != null) q = q.eq("balance_id", String(balanceId));
+  const { data, error } = await q.limit(1000);
+  if (error) throw error;
+  return data;
+}
+
+function bhTotals(rows) {
+  const t = { out: 0, inn: 0, sale: 0 };
+  rows.forEach((h) => {
+    const a = Number(h.actual_amount) || 0;
+    if (h.tx_type === "send" || h.tx_type === "undo_receive") t.out += h.tx_type === "send" ? a : -a;
+    if (h.tx_type === "receive" || h.tx_type === "undo_send") t.inn += h.tx_type === "receive" ? a : -a;
+    t.sale += Number(h.sale_amount) || 0;
+  });
+  return t;
+}
+
+// Popup: one balance, one day, every entry one by one
+function openBalanceHistory(b) {
+  bhBalance = b;
+  $("bhTitle").textContent = b.title;
+  $("bhCurrent").textContent = money(b.amount);
+  $("bhDate").value = localDate();
+  $("bhDate").max = localDate();
+  openModal("balanceHistoryModal");
+  loadBalanceHistoryPopup();
+}
+
+async function loadBalanceHistoryPopup() {
+  if (!bhBalance) return;
+  const day = $("bhDate").value || localDate();
+  const list = $("bhList");
+  list.innerHTML = "";
+  $("bhEmpty").classList.add("hidden");
+
+  let rows;
+  try {
+    rows = await fetchBalanceHistory(day, day, bhBalance.id);
+  } catch (err) {
+    return toast(/balance_history/i.test(err.message || "") ? "History table not found. Run balance_history.sql in Supabase." : err.message, "error");
+  }
+  if (!bhBalance) return;
+
+  const t = bhTotals(rows);
+  $("bhSent").textContent = money(t.out);
+  $("bhGot").textContent = money(t.inn);
+  $("bhSale").textContent = money(t.sale);
+  $("bhCount").textContent = rows.length;
+  $("bhEmpty").classList.toggle("hidden", rows.length > 0);
+
+  rows.forEach((h) => {
+    const [label, cls] = BH_TYPES[h.tx_type] || [h.tx_type, ""];
+    const li = el("li", "bh-item " + cls);
+    const top = el("div", "bh-top");
+    top.appendChild(el("span", "bh-badge", label));
+    top.appendChild(el("span", "muted small", new Date(h.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+    li.appendChild(top);
+
+    const grid = el("div", "bh-grid");
+    const add = (k, v) => {
+      const d = el("div", "");
+      d.appendChild(el("span", "muted small", k));
+      d.appendChild(el("strong", "", v));
+      grid.appendChild(d);
+    };
+    add("Actual amount", money(h.actual_amount));
+    add("Added in sale", money(h.sale_amount));
+    if (h.balance_before != null && h.balance_after != null) {
+      add("Balance before", money(h.balance_before));
+      add("Balance after", money(h.balance_after));
+    }
+    li.appendChild(grid);
+    if (h.description) li.appendChild(el("div", "muted small bh-desc", h.description));
+    list.appendChild(li);
+  });
+}
+$("bhDate").addEventListener("change", loadBalanceHistoryPopup);
+
+// Sales management: balance entries of the selected day(s)
+async function loadBalanceHistoryForSales(from, to, single, reqId) {
+  const body = $("balHistBody");
+  let rows;
+  try {
+    rows = await fetchBalanceHistory(from, to, null);
+  } catch (err) {
+    if (reqId !== salesReqId) return;
+    body.innerHTML = "";
+    $("balHistEmpty").textContent = "Balance history is not set up yet (run balance_history.sql in Supabase).";
+    $("balHistEmpty").classList.remove("hidden");
+    return;
+  }
+  if (reqId !== salesReqId) return;
+
+  $("balHistDateCol").classList.toggle("hidden", single);
+  body.innerHTML = "";
+  $("balHistEmpty").textContent = "No balance entries in this range.";
+  $("balHistEmpty").classList.toggle("hidden", rows.length > 0);
+
+  const t = bhTotals(rows);
+  $("bhsSent").textContent = money(t.out);
+  $("bhsGot").textContent = money(t.inn);
+  $("bhsSale").textContent = money(t.sale);
+
+  rows.forEach((h) => {
+    const [label] = BH_TYPES[h.tx_type] || [h.tx_type];
+    const tr = document.createElement("tr");
+    const cells = [
+      new Date(h.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      h.balance_title + (h.description ? " \u2014 " + h.description : ""),
+      label,
+      money(h.actual_amount),
+      money(h.sale_amount),
+      h.balance_after == null ? "-" : money(h.balance_after),
+    ];
+    if (!single) cells.unshift(fmtDate(h.tx_date));
+    cells.forEach((c) => tr.appendChild(el("td", "", c)));
+    body.appendChild(tr);
+  });
+}
 
 // ====== GENERATE BILL ======
 // Left: this customer's order. Right: products.

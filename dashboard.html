@@ -526,6 +526,34 @@
             </table>
             <p id="salesEmpty" class="empty hidden">No sales in this range.</p>
           </div>
+
+          <!-- Balance entries of the same days (actual amount + amount added to sale) -->
+          <div class="chart-card bal-hist-card">
+            <div class="chart-head"><h3>Balance entries</h3></div>
+            <p class="muted small">Actual money sent / received on these days, and how much of it was added to the sale.</p>
+            <div class="stats">
+              <div class="stat"><span class="muted small">Sent (actual)</span><strong id="bhsSent">0</strong></div>
+              <div class="stat"><span class="muted small">Received (actual)</span><strong id="bhsGot">0</strong></div>
+              <div class="stat"><span class="muted small">Added to sale</span><strong id="bhsSale">0</strong></div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th id="balHistDateCol" class="hidden">Date</th>
+                    <th>Time</th>
+                    <th>Balance</th>
+                    <th>Type</th>
+                    <th>Actual amount</th>
+                    <th>Added in sale</th>
+                    <th>Balance after</th>
+                  </tr>
+                </thead>
+                <tbody id="balHistBody"></tbody>
+              </table>
+              <p id="balHistEmpty" class="empty hidden">No balance entries in this range.</p>
+            </div>
+          </div>
         </section>
 
         <!-- ===== KHATA (coming later) ===== -->
@@ -1618,6 +1646,25 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- ===== BALANCE: HISTORY POPUP (eye button) ===== -->
+    <div class="modal hidden" id="balanceHistoryModal">
+      <div class="modal-box wide">
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+        <h3 id="bhTitle"></h3>
+        <p class="muted small">Current balance: <strong id="bhCurrent"></strong></p>
+        <label for="bhDate">Day</label>
+        <input type="date" id="bhDate" />
+        <div class="bh-stats">
+          <div><span class="muted small">Entries</span><strong id="bhCount">0</strong></div>
+          <div><span class="muted small">Sent</span><strong id="bhSent">0</strong></div>
+          <div><span class="muted small">Received</span><strong id="bhGot">0</strong></div>
+          <div><span class="muted small">Added to sale</span><strong id="bhSale">0</strong></div>
+        </div>
+        <ul class="bh-list" id="bhList"></ul>
+        <p id="bhEmpty" class="empty hidden">No entries on this day.</p>
       </div>
     </div>
 

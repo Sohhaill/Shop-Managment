@@ -1441,3 +1441,81 @@ textarea:focus {
   .cp-head-actions { justify-content: flex-start; }
   .cp-phone { height: 70vh; }
 }
+
+/* ===== Balance history (eye button, popup, Sales page) ===== */
+.bb-chip-wrap { position: relative; flex-shrink: 0; display: flex; }
+.bb-chip-wrap .bb-chip { padding-right: 40px; }
+.bb-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.bb-eye:hover { border-color: var(--accent); }
+td.actions .bb-eye {
+  position: static;
+  transform: none;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.bh-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+.bh-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.bh-stats strong { font-size: 14px; overflow-wrap: anywhere; }
+.bh-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.bh-item {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--muted);
+  border-radius: 10px;
+}
+.bh-item.bh-in { border-left-color: var(--accent); }
+.bh-item.bh-out { border-left-color: var(--error); }
+.bh-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.bh-badge { font-size: 13px; font-weight: 600; }
+.bh-in .bh-badge { color: var(--accent); }
+.bh-out .bh-badge { color: var(--error); }
+.bh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.bh-grid > div { display: flex; flex-direction: column; }
+.bh-desc { margin-top: 6px; }
+.bal-hist-card { margin-top: 16px; }
+@media (max-width: 520px) {
+  .bh-stats { grid-template-columns: 1fr 1fr; }
+}
