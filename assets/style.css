@@ -208,6 +208,9 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
   }
 }
 @media(max-width:768px){
+  .brand{
+    flex-direction: row;
+  }
   main.content {
     margin-bottom: 70px;
 }
@@ -215,14 +218,28 @@ button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
   width: max-content !important;
 }
   .brand img {
-           width: 70px !important;
-        height: 70px !important;
+           width: 56px !important;
+        height: 56px !important;
 }
+.dev-credit .dev-by{
+     font-size: 7px !important;
+}
+.dev-credit .dev-name {
+
+    font-size: 15px !important;
+}
+.top_bar_center{
+  gap: unset !important;
 h2.p_name {
-    font-size: 26px !important;
+    font-size: 20px !important;
+
+}
     p{
           font-size: 9px !important;
     }
+}
+.topbar{
+      padding: 10px 16px !important; 
 }
 div#balanceBar {
     display: grid;
