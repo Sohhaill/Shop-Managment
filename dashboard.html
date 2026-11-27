@@ -40,6 +40,7 @@
             style="width: 80px; height: 80px; border-radius: 49px"
             src="./assets/shop ease.jpg"
           />
+           <div class="dev-credit"><span class="dev-by">Developed by</span> <span class="dev-name">M. SOHAIL</span></div>
         </div>
        
       </div>
@@ -59,6 +60,7 @@
 " >Dukan ka Kam, <span style="
     color: var(--accent);
 "> Assan</span></p>
+       
       </div>
       <div class="topbar-right">
         <span id="userName" class="user-name"></span>
@@ -786,7 +788,37 @@
             <!-- settings -->
             <form id="ceForm" class="card-form ce-card" novalidate>
               <h3>Shop status and announcement</h3>
-              <label class="check-line"><input type="checkbox" id="ceIsOpen" /> Shop is <strong>open</strong> right now</label>
+              <label class="check-line"><input type="checkbox" id="ceAuto" /> Open and close <strong>automatically</strong> by time</label>
+              <div id="ceAutoBox" class="ce-auto hidden">
+                <div class="note-fields">
+                  <div>
+                    <label for="ceOpenTime">Opening time</label>
+                    <input type="time" id="ceOpenTime" />
+                  </div>
+                  <div>
+                    <label for="ceCloseTime">Closing time</label>
+                    <input type="time" id="ceCloseTime" />
+                  </div>
+                  <div class="span-2">
+                    <label for="ceOffDay">Weekly off day (always closed)</label>
+                    <select id="ceOffDay">
+                      <option value="">None</option>
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                      <option value="6">Saturday</option>
+                      <option value="0">Sunday</option>
+                    </select>
+                  </div>
+                </div>
+                <p class="muted small">
+                  The page shows "Open now" from the opening time until the closing time, and "Closed now" outside it.
+                  A closing time after midnight (e.g. 6 PM to 2 AM) works too.
+                </p>
+              </div>
+              <label class="check-line" id="ceIsOpenLine"><input type="checkbox" id="ceIsOpen" /> Shop is <strong>open</strong> right now</label>
               <label for="ceNote">Status note (optional)</label>
               <input type="text" id="ceNote" maxlength="120" placeholder="e.g. Back at 3 PM, Closed on Friday" autocomplete="off" />
               <label for="ceAnn">Announcement (optional)</label>

@@ -276,8 +276,13 @@
     }
 
     const foot = el("p", "footer");
-    foot.textContent = "Updated " + fmtDate(page.updated_at || Date.now()) + " · Made with ShopEase";
+    foot.textContent = "Updated " + fmtDate(page.updated_at || Date.now());
     app.appendChild(foot);
+    const dev = el("div", "dev-credit");
+    dev.appendChild(el("span", "dev-by", "Developed by"));
+    dev.appendChild(document.createTextNode(" "));
+    dev.appendChild(el("span", "dev-name", "M. SOHAIL"));
+    app.appendChild(dev);
   }
 
   // ---------- install as an app (PWA) ----------

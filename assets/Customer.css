@@ -202,7 +202,36 @@ section > h2 {
 .install-card { text-align: center; }
 .install-card p { color: var(--muted); font-size: 14px; margin: 6px 0 12px; }
 .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 28px; }
+.page > .dev-credit { margin-top: 10px; padding-bottom: 8px; }
 .retry { margin-top: 6px; }
 
 /* buttons in the 3-button row stay on one line, even on small phones */
 .actions .btn { padding: 12px 8px; font-size: 14px; white-space: nowrap; }
+
+/* ===== Branding: "Developed by M. SOHAIL" ===== */
+.dev-credit {
+  text-align: center;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+.dev-credit .dev-by {
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dev-credit .dev-name {
+  font-family: "Dancing Script", "Segoe UI", cursive;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--accent);
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .dev-credit .dev-name {
+    background: linear-gradient(90deg, var(--accent), var(--accent-dark, var(--accent)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
