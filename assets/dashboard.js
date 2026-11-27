@@ -9,8 +9,8 @@ const CURRENCY = "Rs";            // shown before every amount
 const LOW_STOCK = 1;              // quantity at or below this shows a low-stock warning
 const KEEP_DAYS = 90;             // how far back the date picker goes (SQL cleanup also uses 90)
 const IMAGE_BUCKET = "product-images";
-const MAX_IMAGE_SIDE = 400;       // product images are shrunk to this size (they show ~165px wide, 400 is sharp even on phones)
-const IMAGE_QUALITY = 0.7;        // 0 to 1: lower = smaller file (0.7 still looks good for product photos)
+const MAX_IMAGE_SIDE = 320;       // product images are shrunk to this size (they show ~165px wide, 400 is sharp even on phones)
+const IMAGE_QUALITY = 0.6;        // 0 to 1: lower = smaller file (0.7 still looks good for product photos)
 const LOGO_MAX_SIDE = 300;        // the shop logo is shown small, 300px is enough for the screen and the PDF
 const IMAGE_CACHE = "31536000";   // seconds. File names never repeat, so browsers may keep images for a year (less download)
 const SHOP_NAME = "My Shop";       // used on the bill only if no shop name is saved in Shop Info
