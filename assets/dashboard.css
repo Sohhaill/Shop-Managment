@@ -570,9 +570,15 @@ textarea:focus {
     overflow-x: auto;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* old Edge */
+  }
+  .sidebar::-webkit-scrollbar {     /* Chrome, Safari, iPhone */
+    display: none;
   }
   .nav-item {
     white-space: nowrap;
+    padding: 7px;
   }
   .content {
     overflow: visible;
