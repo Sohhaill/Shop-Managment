@@ -573,6 +573,15 @@ textarea:focus {
     scrollbar-width: none;          /* Firefox */
     -ms-overflow-style: none;       /* old Edge */
   }
+   * {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* old Edge */
+  }
+  *::-webkit-scrollbar {            /* Chrome, Safari, iPhone */
+    display: none;
+    width: 0;
+    height: 0;
+  }
   .sidebar::-webkit-scrollbar {     /* Chrome, Safari, iPhone */
     display: none;
   }
@@ -598,6 +607,8 @@ textarea:focus {
   .product-grid {
     max-height: 60vh;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+
   }
 }
 /* Custom entry button above the total */

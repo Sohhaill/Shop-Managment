@@ -202,7 +202,7 @@ section > h2 {
 .install-card { text-align: center; }
 .install-card p { color: var(--muted); font-size: 14px; margin: 6px 0 12px; }
 .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 28px; }
-.page > .dev-credit { margin-top: 10px; padding-bottom: 8px; }
+.page > .dev-credit { padding-bottom: 8px; }
 .retry { margin-top: 6px; }
 
 /* buttons in the 3-button row stay on one line, even on small phones */
